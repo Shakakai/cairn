@@ -1,0 +1,23 @@
+{
+  "cases": [
+    {
+      "client_frame_hex": "0229e5833a915a6429a4e3a7948475c338ef436eb82be89c92f059704403db9d550268656c6c6f",
+      "expected_hex": "0479b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad0496640268656c6c6f",
+      "name": "send-to-recv",
+      "src_key_hex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664"
+    },
+    {
+      "client_frame_hex": "0229e5833a915a6429a4e3a7948475c338ef436eb82be89c92f059704403db9d5500",
+      "expected_hex": "0479b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad04966400",
+      "name": "send-empty-datagram",
+      "src_key_hex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664"
+    },
+    {
+      "client_frame_hex": "0329e5833a915a6429a4e3a7948475c338ef436eb82be89c92f059704403db9d550100046162636465666768",
+      "expected_hex": "0579b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad0496640100046162636465666768",
+      "name": "send-batch-to-recv-batch",
+      "src_key_hex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664"
+    }
+  ],
+  "version": 1
+}

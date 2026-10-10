@@ -48,3 +48,10 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Regenerating vectors must not change the committed files without a matching
+      # doc 01 change (docs/08 §1).
+      - name: Vector parity
+        run: |
+          cargo run -p vectors -- --out /tmp/vectors-check
+          diff -r packages/core/test/vectors /tmp/vectors-check

@@ -1,0 +1,35 @@
+{
+  "cases": [
+    {
+      "decoded": {
+        "conn_id": "conn-1",
+        "max_conn_age_s": 3600,
+        "max_payload": 65536,
+        "region": "iad"
+      },
+      "frame_hex": "010001000000000e100369616406636f6e6e2d31",
+      "name": "basic"
+    },
+    {
+      "decoded": {
+        "conn_id": "conn-1",
+        "max_conn_age_s": 3600,
+        "max_payload": 65536,
+        "region": "iad"
+      },
+      "frame_hex": "010001000000000e100369616406636f6e6e2d31deadbeef",
+      "name": "trailing-bytes"
+    },
+    {
+      "decoded": {
+        "conn_id": "",
+        "max_conn_age_s": 0,
+        "max_payload": 65536,
+        "region": ""
+      },
+      "frame_hex": "0100010000000000000000",
+      "name": "empty-region-and-conn-id"
+    }
+  ],
+  "version": 1
+}

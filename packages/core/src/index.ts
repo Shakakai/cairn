@@ -1,2 +1,13 @@
-// M0 scaffold. Implemented per the docs in later milestones; see AGENTS.md.
-export {};
+/**
+ * @cairn/core — the pure Switchback v1 protocol core (docs/01, 02).
+ *
+ * No I/O, no clocks, no randomness: adapters feed events and execute effects.
+ */
+
+export * from "./auth.js";
+export * from "./config.js";
+export * from "./crypto.js";
+export * from "./frames.js";
+export * from "./http.js";
+export * from "./keys.js";
+export * from "./upgrade.js";
