@@ -216,20 +216,17 @@ interface NonceEntry {
   expiresAtMs: number;
 }
 
-/** LRU map keyed by `endpoint|nonceHex`; entries expire after ttlMs. Not thread-safe (per isolate). */
+/** LRU map keyed by `endpoint|nonceHex`; entries expire after their per-claim TTL. */
 export class NonceCache {
   private readonly entries = new Map<string, NonceEntry>();
 
-  constructor(
-    private readonly capacity: number,
-    private readonly ttlMs: number,
-  ) {}
+  constructor(private readonly capacity: number) {}
 
   /**
    * Record `(endpoint, nonce)` for `ttlMs`. Returns false iff it was already recorded and
-   * hasn't expired (replay), or the cache is full of fresher entries.
+   * hasn't expired (replay).
    */
-  claim(endpoint: EndpointId, nonce: Uint8Array, nowMs: number): boolean {
+  claim(endpoint: EndpointId, nonce: Uint8Array, ttlMs: number, nowMs: number): boolean {
     this.purgeExpired(nowMs);
     const key = `${endpoint}|${encodeBase64Url(nonce)}`;
     const existing = this.entries.get(key);
@@ -240,7 +237,7 @@ export class NonceCache {
       if (oldest === undefined) break;
       this.entries.delete(oldest);
     }
-    this.entries.set(key, { expiresAtMs: nowMs + this.ttlMs });
+    this.entries.set(key, { expiresAtMs: nowMs + ttlMs });
     return true;
   }
 

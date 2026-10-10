@@ -77,6 +77,7 @@ Unknown keys are an error.
 | `router.kind` | `"memory"` | `memory` \| `redis` (Node) ; ignored on Cloudflare |
 | `router.redis.url` | — | `rediss://…`; cluster: `router.redis.cluster: true` |
 | `presenceTtlMs` / `hostTtlMs` / `routeCacheMs` | 60000 / 15000 / 2000 | Redis router |
+| `nonceCacheCapacity` | 100000 | bound of the in-memory (endpoint, nonce) replay cache, per host |
 | `tls.mode` | `"offload"` | Node: `offload` \| `terminate` (+ `tls.certFile`, `tls.keyFile`) |
 | `caps.maxConnectionMs` | unset | set per platform (Cloud Run 3600000) |
 | `cf.maxOutboundFramesPerSec` | 2000 | Cloudflare |

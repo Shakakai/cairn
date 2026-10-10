@@ -95,6 +95,22 @@ agree. The Cargo workspace covers `clients/rust/*` and `tools/*`.
 **Consequences:** Adding a language = adding a directory + its own package-manager workspace +
 its mise pins. CI installs tools via mise, so local and CI toolchains cannot drift.
 
+## ADR-012 — Router-initiated closes; over-budget frames; nonce cache capacity
+**Context:** Three details are underspecified by docs/01–03. (a) The registry can evict a
+connection (1008, doc 01 §5.1) or otherwise need a connection closed, but doc 03's
+`SocketHost` interface gave the Router no way to close a socket. (b) Doc 02 says an
+over-budget frame causes `pauseReads` on Node but "drop + metric" on Workers; it does not
+say whether the Node frame itself is dropped. (c) The replay cache bound is a new number.
+**Decision:** (a) `SocketHost` gains `close(conn, code, reason)` (docs/03 updated).
+(b) The over-budget frame is dropped on every host (`rate_limited` metric); Node-class
+hosts additionally get `pauseReads` (emitted once until `underQuota`) so the read stream
+backs up instead of repeatedly dropping — datagram loss is protocol-acceptable (doc 01
+relays QUIC datagrams). `Status(2 RateLimited)` at most once per connection. (c)
+`nonceCacheCapacity` config key, default 100 000 per host (docs/10 updated).
+**Consequences:** The Redis Lua scripts must reproduce the same registry rules including
+re-register semantics (a re-register of the active conn is a no-op; of an inactive conn it
+is promoted through the normal newest-wins path).
+
 ## Open questions (resolve during the milestones; record outcomes as new ADRs)
 
 - M4/M5: Are client WebSocket pings answered by the Workers runtime without invoking the Worker?

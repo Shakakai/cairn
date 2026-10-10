@@ -36,6 +36,7 @@ export interface SocketHost {
   readonly caps: Capabilities;
   deliver(conn: ConnRef, frame: Uint8Array): void;                  // unknown/closed conn: ignore + count
   notify(conn: ConnRef, notice: "becameActive" | "becameInactive" | "promoted"): void;
+  close(conn: ConnRef, code: number, reason: string): void;          // router-initiated closes (e.g. eviction, 1008)
 }
 ```
 

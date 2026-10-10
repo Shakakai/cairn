@@ -93,30 +93,30 @@ describe("base64url", () => {
 
 describe("NonceCache", () => {
   it("rejects replays within the TTL and expires after it", () => {
-    const cache = new NonceCache(100, 10_000);
+    const cache = new NonceCache(100);
     const nonce = new Uint8Array(16).fill(7);
-    expect(cache.claim("ep-a", nonce, 0)).toBe(true);
-    expect(cache.claim("ep-a", nonce, 5_000)).toBe(false); // replay
-    expect(cache.claim("ep-a", nonce, 10_001)).toBe(true); // expired, fresh claim
+    expect(cache.claim("ep-a", nonce, 10_000, 0)).toBe(true);
+    expect(cache.claim("ep-a", nonce, 10_000, 5_000)).toBe(false); // replay
+    expect(cache.claim("ep-a", nonce, 10_000, 10_001)).toBe(true); // expired, fresh claim
   });
 
   it("scopes nonces per endpoint", () => {
-    const cache = new NonceCache(100, 10_000);
+    const cache = new NonceCache(100);
     const nonce = new Uint8Array(16).fill(7);
-    expect(cache.claim("ep-a", nonce, 0)).toBe(true);
-    expect(cache.claim("ep-b", nonce, 0)).toBe(true);
+    expect(cache.claim("ep-a", nonce, 10_000, 0)).toBe(true);
+    expect(cache.claim("ep-b", nonce, 10_000, 0)).toBe(true);
   });
 
   it("evicts oldest beyond capacity", () => {
-    const cache = new NonceCache(2, 60_000);
+    const cache = new NonceCache(2);
     const n = (b: number) => new Uint8Array(16).fill(b);
-    expect(cache.claim("ep", n(1), 0)).toBe(true);
-    expect(cache.claim("ep", n(2), 0)).toBe(true);
-    expect(cache.claim("ep", n(3), 0)).toBe(true); // evicts n(1)
+    expect(cache.claim("ep", n(1), 60_000, 0)).toBe(true);
+    expect(cache.claim("ep", n(2), 60_000, 0)).toBe(true);
+    expect(cache.claim("ep", n(3), 60_000, 0)).toBe(true); // evicts n(1)
     expect(cache.size).toBe(2);
-    expect(cache.claim("ep", n(1), 1)).toBe(true); // n(1) was evicted; re-claim evicts n(2)
-    expect(cache.claim("ep", n(2), 1)).toBe(true); // n(2) was evicted by the n(1) re-claim
-    expect(cache.claim("ep", n(1), 1)).toBe(false); // n(1) is present
+    expect(cache.claim("ep", n(1), 60_000, 1)).toBe(true); // n(1) was evicted; re-claim evicts n(2)
+    expect(cache.claim("ep", n(2), 60_000, 1)).toBe(true); // n(2) was evicted by the n(1) re-claim
+    expect(cache.claim("ep", n(1), 60_000, 1)).toBe(false); // n(1) is present
   });
 });
 
