@@ -1,0 +1,8 @@
+[package]
+name = "switchback-proto"
+description = "Switchback v1 codec + connect-auth blob; shares test vectors with @cairn/core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

@@ -1,0 +1,23 @@
+{
+  "name": "@cairn/router-memory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "In-process Router with memory maps (docs/03).",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

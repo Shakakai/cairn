@@ -1,0 +1,7 @@
+[tools]
+node = "24"
+pnpm = "9.15.9"
+rust = "1.95.0"
+
+# The `pi` task is defined as a standalone script at .mise/tasks/pi so that
+# arguments are forwarded to pi (e.g. `mise run pi -c`).

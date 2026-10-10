@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+  "clients/rust/switchback-proto",
+  "clients/rust/switchback-stun",
+  "clients/rust/switchback-endpoint",
+  "tools/vectors",
+  "tools/e2e",
+  "tools/load",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Client crates (path deps wire up in M1+)
+switchback-proto = { path = "clients/rust/switchback-proto" }
+switchback-stun = { path = "clients/rust/switchback-stun" }
+switchback-endpoint = { path = "clients/rust/switchback-endpoint" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

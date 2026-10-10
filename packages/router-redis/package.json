@@ -1,0 +1,23 @@
+{
+  "name": "@cairn/router-redis",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Redis/Valkey Router for container pools (docs/06).",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

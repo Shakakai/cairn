@@ -1,0 +1,23 @@
+{
+  "name": "@cairn/adapter-cloudflare",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cairn Edge: Worker + Mailbox Durable Object (docs/04).",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

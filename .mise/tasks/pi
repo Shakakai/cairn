@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Run the pi coding agent with the project environment loaded.
+#
+# All arguments are forwarded to pi, e.g.:
+#   mise run pi                 # interactive session
+#   mise run pi -c              # continue the most recent session
+#   mise run pi -p "question"   # non-interactive prompt
+set -euo pipefail
+
+# Resolve the project root from this script's location so the task behaves
+# the same regardless of the caller's working directory.
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# shellcheck source=scripts/pi-env.sh
+source "$PROJECT_ROOT/scripts/pi-env.sh" "$PROJECT_ROOT"
+
+# Require pi >= 1.0. Uses awk (not `sort -V`, which BSD sort lacks) so the
+# comparison works on macOS and Linux.
+version_ge() {
+  awk -v a="$1" -v b="$2" 'BEGIN{
+    n = split(a, A, "."); m = split(b, B, ".");
+    for (i = 1; i <= n || i <= m; i++) {
+      x = (i <= n) ? A[i] + 0 : 0; y = (i <= m) ? B[i] + 0 : 0;
+      if (x > y) exit 0; if (x < y) exit 1;
+    }
+    exit 0;
+  }'
+}
+
+PI_VERSION="$(pi --version 2>/dev/null | head -n1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+if [[ -z "$PI_VERSION" ]] || ! version_ge "$PI_VERSION" "1.0.0"; then
+  echo "Error: 'mise run pi' requires pi >= 1.0 (found: ${PI_VERSION:-unknown})." >&2
+  echo "Update with: npm install -g @earendil-works/pi-coding-agent@latest" >&2
+  exit 1
+fi
+
+exec pi "$@"

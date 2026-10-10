@@ -1,0 +1,8 @@
+[package]
+name = "load"
+description = "Load and cost measurement client (docs/08)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

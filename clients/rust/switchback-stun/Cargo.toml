@@ -1,0 +1,8 @@
+[package]
+name = "switchback-stun"
+description = "RFC 5389 STUN Binding request/response (XOR-MAPPED-ADDRESS)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

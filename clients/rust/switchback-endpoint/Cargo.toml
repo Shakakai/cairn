@@ -1,0 +1,8 @@
+[package]
+name = "switchback-endpoint"
+description = "App-facing Switchback endpoint crate (1.0.0 at first release)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
