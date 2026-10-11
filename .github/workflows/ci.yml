@@ -44,6 +44,22 @@ jobs:
       - name: e2e scenarios
         run: cargo run -p e2e -- --cairn ws://127.0.0.1:18080 --scenario all
 
+      # M7: restart (drain via the admin port) and max-age (a relay with a 2.5s
+      # connection-age limit) prove C3 make-before-break with zero message loss.
+      - name: Start aged Cairn for max-age
+        run: |
+          RELAY_CONFIG='{"access":{"mode":"open"},"ports":{"relay":18082,"admin":18092},"maxConnectionAgeMs":2500}' \
+            node packages/adapter-node/dist/main.js > /tmp/cairn-aged.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:18082/healthz > /dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+
+      - name: e2e restart and max-age
+        run: |
+          cargo run -p e2e -- --cairn ws://127.0.0.1:18080 --scenario restart --cairn-admin http://127.0.0.1:18090
+          cargo run -p e2e -- --cairn ws://127.0.0.1:18082 --scenario max-age
+
       # M5 (local half): Cloudflare adapter under Miniflare + full smoke against
       # `wrangler dev` (real workerd). Staging deploy + doc-04 risk measurements need
       # Cloudflare credentials (deploy/cloudflare/README.md).

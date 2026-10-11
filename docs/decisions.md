@@ -214,6 +214,31 @@ deploys (AWS/GCP/Azure) are built (`deploy/aws|gcp|azure`, `tofu validate` clean
 NOT applied: no cloud credentials in the environment; the docker-compose pool is the
 deployable proof (image 258 MB, e2e `smoke` on node 1, all scenarios on node 2).
 
+## ADR-018 — Hyperscaler pools deferred; M7 scope decisions
+**Context:** (a) M6's provider staging deploys need AWS/GCP/Azure credentials that are not
+available; the user chose to leave them incomplete rather than chase credentials.
+(b) M7 (C4/C5) needs design commitments for our from-scratch client: how peers learn
+each other's UDP addresses, and how the quiet-relay acceptance interacts with the
+ADR-016 self-keepalive.
+**Decision:** (a) AWS/GCP/Azure remain UNVERIFIED end-to-end: Terraform validates
+(`tofu validate`), the image builds and passes e2e via the docker-compose pool, but no
+provider deployment exists. `docs/11-milestones.md` M6 carries a status block listing
+exactly what remains. (b) Direct-path discovery in v1 is **in-band**: after the QUIC
+handshake completes over the relay, the peers exchange UDP candidates (local socket
+address + STUN reflexive address) on a dedicated bi stream with ALPN
+`switchback/candidates`, then switch the hybrid socket to direct mode. (c) With
+`QuietWhenDirect` (default), the client suppresses relay self-keepalives (ADR-016)
+once the direct path is selected and instead keeps the NAT mapping open with a 15s
+QUIC keepalive on the direct path — so "relay frames reach zero" is literal. The
+e2e `echo-direct` window starts when both directions confirm direct mode.
+**Consequences:** M7's NAT-simulation STUN-vs-baseline comparison is moot in the form
+doc 08 wrote it (our client never had QAD; STUN is the only discovery mechanism) —
+NAT-lab success-rate numbers still require the network-namespace topology and are
+deferred with the job skeleton. Cloud Run hourly-recycling verification needs a GCP
+deployment (deferred with the providers). Holepunching across arbitrary NATs (the hard
+part of "direct") is NOT in v1 scope beyond STUN reflexive + LAN/loopback candidates;
+multi-NAT support is future work (docs/12).
+
 ## Open questions (resolve during the milestones; record outcomes as new ADRs)
 
 - M4/M5: Are client WebSocket pings answered by the Workers runtime without invoking the Worker?

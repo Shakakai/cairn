@@ -5,10 +5,12 @@
 
 mod config;
 mod endpoint;
+mod hybrid;
 mod identity;
 mod probe;
 pub mod relay_client;
 mod socket;
+mod stun_probe;
 
 pub use config::{CairnUrl, InvalidCairnUrl, RelayPathPolicy, SecretKey, SwitchbackConfig};
 pub use endpoint::{
@@ -17,6 +19,7 @@ pub use endpoint::{
 };
 pub use identity::{verify_peer, PeerIdentity};
 pub use probe::{captive_portal_check, ProbeError};
+pub use switchback_stun as stun;
 pub use relay_client::{RelayClientHandle, RelayEvent, Recorder, ServerInfo};
 
 pub use switchback_proto as proto;

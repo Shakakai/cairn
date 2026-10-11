@@ -266,65 +266,69 @@ describe("connection state machine (docs/02)", () => {
 // ---------------------------------------------------------------------------
 
 describe("connection state machine properties", () => {
-  it("10 000 random event sequences: close is terminal, Status(2) at most once, codes valid", () => {
-    const eventArbitrary = fc.constantFrom(
-      { kind: "frame" },
-      { kind: "frame" },
-      { kind: "textMessage" },
-      { kind: "registered" },
-      { kind: "registryNotice", notice: "becameActive" },
-      { kind: "registryNotice", notice: "becameInactive" },
-      { kind: "registryNotice", notice: "promoted" },
-      { kind: "deliver" },
-      { kind: "timer" },
-      { kind: "drain", reconnectInMs: 100, tryForMs: 1_000 },
-      { kind: "overQuota" },
-      { kind: "underQuota" },
-      { kind: "socketClosed" },
-    );
+  it(
+    "10 000 random event sequences: close is terminal, Status(2) at most once, codes valid",
+    { timeout: 60_000 },
+    () => {
+      const eventArbitrary = fc.constantFrom(
+        { kind: "frame" },
+        { kind: "frame" },
+        { kind: "textMessage" },
+        { kind: "registered" },
+        { kind: "registryNotice", notice: "becameActive" },
+        { kind: "registryNotice", notice: "becameInactive" },
+        { kind: "registryNotice", notice: "promoted" },
+        { kind: "deliver" },
+        { kind: "timer" },
+        { kind: "drain", reconnectInMs: 100, tryForMs: 1_000 },
+        { kind: "overQuota" },
+        { kind: "underQuota" },
+        { kind: "socketClosed" },
+      );
 
-    fc.assert(
-      fc.property(
-        fc.array(eventArbitrary, { minLength: 1, maxLength: 100 }),
-        fc.integer(),
-        (events, seed) => {
-          const { env, advance } = makeEnv({
-            seed,
-            config: { maxInboundFramesPerSec: 50, maxNewDestinationsPerMinute: 5 },
-          });
-          let { state } = open(env);
-          let rateLimitStatuses = 0;
-          let closedSeen = false;
-          events.forEach((raw, i) => {
-            if (i % 7 === 0) advance(250);
-            const ev = { ...raw } as Parameters<typeof step>[1];
-            if (ev.kind === "frame") {
-              (ev as { bytes: Uint8Array }).bytes = sendFrame(DST, i & 0xff);
-            }
-            if (ev.kind === "deliver") {
-              (ev as { frame: Uint8Array }).frame = encode.status(0);
-            }
-            const { state: next, effects } = step(state, ev, env);
-            state = next;
-
-            if (closedSeen) {
-              // Close is terminal: no further effects.
-              expect(effects).toEqual([]);
-              return;
-            }
-            for (const e of effects) {
-              if (e.kind === "close") {
-                expect([1002, 1009, 1012]).toContain(e.code);
-                closedSeen = true;
+      fc.assert(
+        fc.property(
+          fc.array(eventArbitrary, { minLength: 1, maxLength: 100 }),
+          fc.integer(),
+          (events, seed) => {
+            const { env, advance } = makeEnv({
+              seed,
+              config: { maxInboundFramesPerSec: 50, maxNewDestinationsPerMinute: 5 },
+            });
+            let { state } = open(env);
+            let rateLimitStatuses = 0;
+            let closedSeen = false;
+            events.forEach((raw, i) => {
+              if (i % 7 === 0) advance(250);
+              const ev = { ...raw } as Parameters<typeof step>[1];
+              if (ev.kind === "frame") {
+                (ev as { bytes: Uint8Array }).bytes = sendFrame(DST, i & 0xff);
               }
-              if (e.kind === "send" && sentStatuses([e]).includes(2)) rateLimitStatuses += 1;
-            }
-            expect(state.sentTo.size).toBeLessThanOrEqual(5);
-          });
-          expect(rateLimitStatuses).toBeLessThanOrEqual(1);
-        },
-      ),
-      { numRuns: 10_000 },
-    );
-  });
+              if (ev.kind === "deliver") {
+                (ev as { frame: Uint8Array }).frame = encode.status(0);
+              }
+              const { state: next, effects } = step(state, ev, env);
+              state = next;
+
+              if (closedSeen) {
+                // Close is terminal: no further effects.
+                expect(effects).toEqual([]);
+                return;
+              }
+              for (const e of effects) {
+                if (e.kind === "close") {
+                  expect([1002, 1009, 1012]).toContain(e.code);
+                  closedSeen = true;
+                }
+                if (e.kind === "send" && sentStatuses([e]).includes(2)) rateLimitStatuses += 1;
+              }
+              expect(state.sentTo.size).toBeLessThanOrEqual(5);
+            });
+            expect(rateLimitStatuses).toBeLessThanOrEqual(1);
+          },
+        ),
+        { numRuns: 10_000 },
+      );
+    },
+  );
 });

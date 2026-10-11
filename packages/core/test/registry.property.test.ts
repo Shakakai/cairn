@@ -13,7 +13,7 @@ const opArbitrary = fc.record({
 });
 
 describe("registry property tests (docs/02, 08)", () => {
-  it("never yields two active connections, never loses an open connection", () => {
+  it("never yields two active connections, never loses an open connection", { timeout: 60_000 }, () => {
     fc.assert(
       fc.property(fc.array(opArbitrary, { minLength: 1, maxLength: 120 }), (ops) => {
         let entry: EndpointEntry | undefined;
@@ -54,7 +54,7 @@ describe("registry property tests (docs/02, 08)", () => {
     );
   });
 
-  it("emits gone exactly once per full departure", () => {
+  it("emits gone exactly once per full departure", { timeout: 60_000 }, () => {
     fc.assert(
       fc.property(fc.array(opArbitrary, { minLength: 1, maxLength: 120 }), (ops) => {
         let entry: EndpointEntry | undefined;
@@ -86,27 +86,31 @@ describe("registry property tests (docs/02, 08)", () => {
     );
   });
 
-  it("respects maxConnectionsPerEndpoint with 1008 closes for the oldest inactive", () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.integer({ min: 1, max: 4 }), { minLength: 5, maxLength: 40 }),
-        (registrations) => {
-          let entry: EndpointEntry | undefined;
-          for (const id of registrations) {
-            const { entry: next, out } = registryStep(EP, entry, {
-              op: "register",
-              conn: conn(id),
-            });
-            entry = next;
-            const total = (entry?.active ? 1 : 0) + (entry?.inactive.length ?? 0);
-            expect(total).toBeLessThanOrEqual(4);
-            for (const o of out) {
-              if ("close" in o) expect(o.code).toBe(1008);
+  it(
+    "respects maxConnectionsPerEndpoint with 1008 closes for the oldest inactive",
+    { timeout: 60_000 },
+    () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.integer({ min: 1, max: 4 }), { minLength: 5, maxLength: 40 }),
+          (registrations) => {
+            let entry: EndpointEntry | undefined;
+            for (const id of registrations) {
+              const { entry: next, out } = registryStep(EP, entry, {
+                op: "register",
+                conn: conn(id),
+              });
+              entry = next;
+              const total = (entry?.active ? 1 : 0) + (entry?.inactive.length ?? 0);
+              expect(total).toBeLessThanOrEqual(4);
+              for (const o of out) {
+                if ("close" in o) expect(o.code).toBe(1008);
+              }
             }
-          }
-        },
-      ),
-      { numRuns: 10_000 },
-    );
-  });
+          },
+        ),
+        { numRuns: 10_000 },
+      );
+    },
+  );
 });

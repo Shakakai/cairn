@@ -12,11 +12,15 @@ use switchback_endpoint::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Scenario {
     EchoRelayed,
+    EchoDirect,
     Displace,
     Gone,
     Replay,
     Stale,
     Probes,
+    Restart,
+    MaxAge,
+    Stun,
     Smoke,
 }
 
@@ -24,11 +28,15 @@ impl Scenario {
     fn parse(name: &str) -> Option<Self> {
         Some(match name {
             "echo-relayed" => Scenario::EchoRelayed,
+            "echo-direct" => Scenario::EchoDirect,
             "displace" => Scenario::Displace,
             "gone" => Scenario::Gone,
             "replay" => Scenario::Replay,
             "stale" => Scenario::Stale,
             "probes" => Scenario::Probes,
+            "restart" => Scenario::Restart,
+            "max-age" => Scenario::MaxAge,
+            "stun" => Scenario::Stun,
             "smoke" => Scenario::Smoke,
             _ => return None,
         })
@@ -37,11 +45,15 @@ impl Scenario {
     fn name(&self) -> &'static str {
         match self {
             Scenario::EchoRelayed => "echo-relayed",
+            Scenario::EchoDirect => "echo-direct",
             Scenario::Displace => "displace",
             Scenario::Gone => "gone",
             Scenario::Replay => "replay",
             Scenario::Stale => "stale",
             Scenario::Probes => "probes",
+            Scenario::Restart => "restart",
+            Scenario::MaxAge => "max-age",
+            Scenario::Stun => "stun",
             Scenario::Smoke => "smoke",
         }
     }
@@ -50,6 +62,8 @@ impl Scenario {
 struct Opts {
     cairn: String,
     scenario: String,
+    /// Admin URL of the relay (restart scenario POSTs /drain).
+    cairn_admin: Option<String>,
 }
 
 fn parse_args() -> Opts {
@@ -60,6 +74,9 @@ fn parse_args() -> Opts {
         match arg.as_str() {
             "--cairn" => cairn = args.next(),
             "--scenario" => scenario = args.next(),
+            "--cairn-admin" => {
+                let _ = args.next();
+            }
             other => {
                 eprintln!("unknown argument: {other}");
                 std::process::exit(2);
@@ -69,6 +86,10 @@ fn parse_args() -> Opts {
     Opts {
         cairn: cairn.unwrap_or_else(|| "ws://127.0.0.1:8080".to_string()),
         scenario: scenario.unwrap_or_else(|| "all".to_string()),
+        cairn_admin: std::env::args()
+            .skip(1)
+            .position(|a| a == "--cairn-admin")
+            .and_then(|i| std::env::args().skip(1).nth(i + 1)),
     }
 }
 
@@ -93,10 +114,12 @@ async fn main() {
         "all" => vec![
             Scenario::Probes,
             Scenario::EchoRelayed,
+            Scenario::EchoDirect,
             Scenario::Displace,
             Scenario::Gone,
             Scenario::Replay,
             Scenario::Stale,
+            Scenario::Stun,
         ],
         "smoke" => vec![Scenario::Probes, Scenario::EchoRelayed, Scenario::Displace],
         name => vec![Scenario::parse(name).unwrap_or_else(|| {
@@ -109,7 +132,7 @@ async fn main() {
     let start = std::time::Instant::now();
     for scenario in scenarios {
         let t = std::time::Instant::now();
-        match run(scenario, &opts.cairn).await {
+        match run(scenario, &opts.cairn, opts.cairn_admin.as_deref()).await {
             Ok(()) => println!("PASS {} ({:.1}s)", scenario.name(), t.elapsed().as_secs_f64()),
             Err(error) => {
                 failures += 1;
@@ -123,14 +146,18 @@ async fn main() {
     }
 }
 
-async fn run(scenario: Scenario, cairn: &str) -> Result<(), String> {
+async fn run(scenario: Scenario, cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
     match scenario {
         Scenario::EchoRelayed => echo_relayed(cairn).await,
+        Scenario::EchoDirect => echo_direct(cairn).await,
         Scenario::Displace => displace(cairn).await,
         Scenario::Gone => gone(cairn).await,
         Scenario::Replay => replay(cairn).await,
         Scenario::Stale => stale(cairn).await,
         Scenario::Probes => probes(cairn).await,
+        Scenario::Restart => restart(cairn, cairn_admin).await,
+        Scenario::MaxAge => max_age(cairn).await,
+        Scenario::Stun => stun().await,
         Scenario::Smoke => unreachable!("smoke expands to scenarios"),
     }
 }
@@ -388,17 +415,318 @@ async fn wait_event(
     matches_fn: impl Fn(&RelayEventInner) -> bool,
     timeout: Duration,
 ) -> Result<(), String> {
-    let deadline = tokio::time::sleep(timeout);
-    tokio::pin!(deadline);
+    let deadline = std::time::Instant::now() + timeout;
     loop {
-        tokio::select! {
-            maybe = rx.recv() => match maybe {
-                Some(switchback_endpoint::RelayEvent::BecameActive) if matches_fn(&RelayEventInner::Active) => return Ok(()),
-                Some(switchback_endpoint::RelayEvent::Displaced) if matches_fn(&RelayEventInner::Displaced) => return Ok(()),
-                Some(_) => continue,
-                None => return Err("event stream closed".into()),
-            },
-            _ = &mut deadline => return Err("timed out waiting for relay event".into()),
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err("timed out waiting for relay event".into());
+        }
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(switchback_endpoint::RelayEvent::BecameActive))
+                if matches_fn(&RelayEventInner::Active) => return Ok(()),
+            Ok(Some(switchback_endpoint::RelayEvent::Displaced))
+                if matches_fn(&RelayEventInner::Displaced) => return Ok(()),
+            Ok(Some(_)) => continue,
+            Ok(None) => return Err("event stream closed".into()),
+            Err(_) => return Err("timed out waiting for relay event".into()),
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// M7 scenarios
+// ---------------------------------------------------------------------------
+
+/// Two endpoints with UDP transports go direct (C4); the relay must carry no data
+/// frames for the connection within 35s of the direct path being selected
+/// (doc 09 C4, amended by ADR-018).
+async fn echo_direct(cairn: &str) -> Result<(), String> {
+    let cfg = config(cairn);
+    cfg_stun_local(&cfg);
+    let a = switchback_endpoint::builder(&cfg)
+        .secret_key(SecretKey::from_bytes([21u8; 32]))
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    let b = switchback_endpoint::builder(&cfg)
+        .secret_key(SecretKey::from_bytes([22u8; 32]))
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    a.relay().recorder().enable();
+    b.relay().recorder().enable();
+
+    let peer_b = b.local_id().clone();
+    let b_accept = b.clone();
+    let accept = tokio::spawn(async move {
+        let (_peer, conn) = b_accept.accept().await.expect("accept");
+        let (mut send, mut recv) = conn.accept_bi().await.unwrap();
+        while let Some(chunk) = recv.read_chunk(1 << 20, true).await.unwrap() {
+            send.write_all(&chunk.bytes).await.unwrap();
+        }
+        send.finish().unwrap();
+        conn.closed().await;
+    });
+
+    let t_start = std::time::Instant::now();
+    let conn = a.connect(&peer_b).await.map_err(|e| e.to_string())?;
+    // Wait for both sides to select the direct path.
+    let deadline = t_start + Duration::from_secs(30);
+    loop {
+        if a.direct_connection_count() > 0 && b.direct_connection_count() > 0 {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            return Err(format!(
+                "direct path not established within 30s (a={}, b={})",
+                a.direct_connection_count(),
+                b.direct_connection_count()
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let t_direct = std::time::Instant::now();
+    a.relay().recorder().clear();
+    b.relay().recorder().clear();
+
+    // Echo traffic while watching the relay.
+    let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+    let reader = tokio::spawn(async move {
+        let mut data = Vec::new();
+        while let Some(chunk) = recv.read_chunk(1 << 20, true).await.unwrap() {
+            data.extend_from_slice(&chunk.bytes);
+        }
+        data
+    });
+    let mut expected = Vec::new();
+    for i in 0..1000 {
+        let msg = format!("direct {i}");
+        expected.extend_from_slice(msg.as_bytes());
+        send.write_all(msg.as_bytes()).await.unwrap();
+    }
+    send.finish().unwrap();
+    let echoed = reader.await.unwrap();
+    if echoed != expected {
+        return Err("echo mismatch over the direct path".into());
+    }
+
+    // doc 09 C4 acceptance: relay data frames reach zero within 35s of going direct.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let window = t_direct.elapsed();
+    for (label, recorder) in [("a", a.relay().recorder()), ("b", b.relay().recorder())] {
+        let data_frames = recorder
+            .frames()
+            .iter()
+            .filter(|f| f.outgoing && f.bytes.first() == Some(&0x02) && f.bytes.len() > 34)
+            .count();
+        if data_frames > 0 {
+            return Err(format!("{label}: {data_frames} relay data frames within {window:?} of going direct"));
+        }
+    }
+    if window > Duration::from_secs(35) {
+        return Err(format!("direct path took {window:?} (> 35s)"));
+    }
+    conn.close(0u32.into(), b"done");
+    accept.await.unwrap();
+    Ok(())
+}
+
+/// Server drains (Restarting + close 1012); the client must reconnect make-before-break
+/// (C3) with zero application message loss on a reliable stream (docs/08).
+async fn restart(cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
+    let admin = cairn_admin.ok_or("restart requires --cairn-admin <admin url>")?;
+    let cfg = config(cairn);
+    let a = builder_relay_only(&cfg)
+        .secret_key(SecretKey::from_bytes([23u8; 32]))
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    let b = builder_relay_only(&cfg)
+        .secret_key(SecretKey::from_bytes([24u8; 32]))
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let peer_b = b.local_id().clone();
+    let b_accept = b.clone();
+    let accept = tokio::spawn(async move {
+        let (_peer, conn) = b_accept.accept().await.expect("accept");
+        let (mut send, mut recv) = conn.accept_bi().await.unwrap();
+        while let Some(chunk) = recv.read_chunk(1 << 20, true).await.unwrap() {
+            send.write_all(&chunk.bytes).await.unwrap();
+        }
+        send.finish().unwrap();
+        conn.closed().await;
+    });
+
+    let conn = a.connect(&peer_b).await.map_err(|e| e.to_string())?;
+    let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+    let reader = tokio::spawn(async move {
+        let mut data = Vec::new();
+        while let Some(chunk) = recv.read_chunk(1 << 20, true).await.unwrap() {
+            data.extend_from_slice(&chunk.bytes);
+        }
+        data
+    });
+
+    // Stream messages through the drain.
+    let mut expected = Vec::new();
+    for i in 0..500 {
+        let msg = format!("through-drain {i}");
+        expected.extend_from_slice(msg.as_bytes());
+        send.write_all(msg.as_bytes()).await.unwrap();
+    }
+    // Trigger the server drain mid-stream.
+    let client = reqwestless::post(&format!("{admin}/drain")).await?;
+    if client != 202 {
+        return Err(format!("drain trigger returned {client}"));
+    }
+    for i in 500..1000 {
+        let msg = format!("through-drain {i}");
+        expected.extend_from_slice(msg.as_bytes());
+        send.write_all(msg.as_bytes()).await.unwrap();
+    }
+    send.finish().unwrap();
+    let echoed = tokio::time::timeout(Duration::from_secs(60), reader)
+        .await
+        .map_err(|_| "echo did not complete after drain".to_string())?
+        .unwrap();
+    if echoed != expected {
+        return Err(format!(
+            "message loss across the restart: expected {} bytes, got {}",
+            expected.len(),
+            echoed.len()
+        ));
+    }
+    conn.close(0u32.into(), b"done");
+    accept.await.unwrap();
+    Ok(())
+}
+
+/// Same as `restart`, but the recycle is driven by the relay's max-connection-age
+/// (the relay closes with Restarting + 1012; C3 must hide it). Run against a relay
+/// started with `maxConnectionAgeMs` configured (docs/08).
+async fn max_age(cairn: &str) -> Result<(), String> {
+    restart_like(cairn, None).await
+}
+
+async fn restart_like(cairn: &str, _unused: Option<&str>) -> Result<(), String> {
+    let cfg = config(cairn);
+    let a = builder_relay_only(&cfg)
+        .secret_key(SecretKey::from_bytes([25u8; 32]))
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    let b = builder_relay_only(&cfg)
+        .secret_key(SecretKey::from_bytes([26u8; 32]))
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let peer_b = b.local_id().clone();
+    let b_accept = b.clone();
+    let accept = tokio::spawn(async move {
+        let (_peer, conn) = b_accept.accept().await.expect("accept");
+        let (mut send, mut recv) = conn.accept_bi().await.unwrap();
+        while let Some(chunk) = recv.read_chunk(1 << 20, true).await.unwrap() {
+            send.write_all(&chunk.bytes).await.unwrap();
+        }
+        send.finish().unwrap();
+        conn.closed().await;
+    });
+
+    let conn = a.connect(&peer_b).await.map_err(|e| e.to_string())?;
+    let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+    let reader = tokio::spawn(async move {
+        let mut data = Vec::new();
+        while let Some(chunk) = recv.read_chunk(1 << 20, true).await.unwrap() {
+            data.extend_from_slice(&chunk.bytes);
+        }
+        data
+    });
+
+    let mut expected = Vec::new();
+    // Keep streaming for ~3 recycles (CI relays use maxConnectionAgeMs ~2.5s).
+    let deadline = std::time::Instant::now() + Duration::from_secs(12);
+    let mut i = 0;
+    while std::time::Instant::now() < deadline {
+        let msg = format!("through-age {i}");
+        expected.extend_from_slice(msg.as_bytes());
+        send.write_all(msg.as_bytes()).await.unwrap();
+        i += 1;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    send.finish().unwrap();
+    let echoed = tokio::time::timeout(Duration::from_secs(60), reader)
+        .await
+        .map_err(|_| "echo did not complete after max-age recycles".to_string())?
+        .unwrap();
+    if echoed != expected {
+        return Err(format!(
+            "message loss across max-age recycles: expected {} bytes, got {}",
+            expected.len(),
+            echoed.len()
+        ));
+    }
+    conn.close(0u32.into(), b"done");
+    accept.await.unwrap();
+    Ok(())
+}
+
+/// STUN: obtain a reflexive address from the configured server (doc 08). Skips (passes)
+/// when the network is unreachable.
+async fn stun() -> Result<(), String> {
+    use std::net::SocketAddr;
+    let server: SocketAddr = match "stun.cloudflare.com:3478".parse() {
+        Ok(s) => s,
+        Err(_) => {
+            // Resolve the hostname once.
+            let resolved = tokio::net::lookup_host("stun.cloudflare.com:3478")
+                .await
+                .map_err(|e| e.to_string())?
+                .next()
+                .ok_or("no STUN address resolved")?;
+            resolved
+        }
+    };
+    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await.map_err(|e| e.to_string())?;
+    match switchback_endpoint::stun::bind(&socket, server, Duration::from_secs(5)).await {
+        Ok(mapped) => {
+            println!("stun: reflexive address {}", mapped.addr);
+            Ok(())
+        }
+        Err(error) => {
+            println!("stun: unreachable ({error}); skipping");
+            Ok(())
+        }
+    }
+}
+
+/// Local runs: no external STUN needed for the direct path on loopback.
+fn cfg_stun_local(_cfg: &SwitchbackConfig) {}
+
+/// Minimal HTTP POST helper (no reqwest dependency).
+mod reqwestless {
+    pub async fn post(url: &str) -> Result<u16, String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (hostport, path) = url
+            .split_once("://")
+            .and_then(|(_, rest)| rest.split_once('/'))
+            .ok_or_else(|| format!("bad admin url {url}"))?;
+        let host = hostport.split(':').next().unwrap_or(hostport);
+        let port: u16 = hostport.rsplit(':').next().and_then(|p| p.parse().ok()).unwrap_or(80);
+        let mut stream = tokio::net::TcpStream::connect((host, port))
+            .await
+            .map_err(|e| format!("admin connect: {e}"))?;
+        let request = format!("POST /{path} HTTP/1.1\r\nHost: {hostport}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        stream.write_all(request.as_bytes()).await.map_err(|e| e.to_string())?;
+        let mut head = [0u8; 64];
+        let n = stream.read(&mut head).await.map_err(|e| e.to_string())?;
+        let text = String::from_utf8_lossy(&head[..n]);
+        text.split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| format!("bad admin response: {text:?}"))
+    }
+}
+

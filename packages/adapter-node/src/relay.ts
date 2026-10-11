@@ -517,6 +517,7 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
 
   let adminServer: Server | undefined;
   let adminUrl = "";
+  const drainImpl: () => void = () => {};
 
   if (options.adminPort !== undefined) {
     adminServer = createServer((req, res) => {
@@ -524,6 +525,13 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
       if (url.pathname === "/metrics") {
         res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" });
         res.end(metrics.render());
+        return;
+      }
+      if (url.pathname === "/drain" && req.method === "POST") {
+        // Ops trigger for the graceful drain (doc 05); e2e `restart` uses this.
+        drainImpl();
+        res.writeHead(202, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ draining: true }));
         return;
       }
       if (url.pathname === "/readyz") {

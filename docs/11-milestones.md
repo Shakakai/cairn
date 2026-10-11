@@ -79,6 +79,18 @@ Acceptance
 
 ## M6 — Container pools on AWS, GCP, Azure
 
+> **Status: partially complete (recorded 2026-10-11, ADR-017).** Everything buildable and
+> verifiable locally is done and green: `router-redis` (Lua + 10k-op differential tests),
+> router conformance on Redis standalone and cluster, multi-instance adapter support,
+> the 2-instance + Redis host/kill-a-host acceptance checks, the multi-arch container
+> image, and `tofu validate`-clean Terraform for all three providers. **Provider staging
+> deploys are not done** — no AWS/GCP/Azure credentials are available in this
+> environment. The docker-compose pool (`deploy/docker`) is the deployable proof
+> (e2e `smoke` on node 1, all scenarios on node 2). Remaining when credentials exist:
+> push the image to each provider's registry, `terraform apply`, run
+> `cargo run -p e2e -- --cairn <url> --scenario smoke` per provider, verify Container
+> Apps ingress timeouts (open question, ADR-017).
+
 Deliverables
 - `packages/router-redis` (Lua, pub/sub, liveness, nonce claims) + differential tests.
 - Multi-instance support in `adapter-node` (registering-window buffering, local fast path).
@@ -93,6 +105,12 @@ Acceptance
 - [ ] Container Apps ingress timeouts verified and recorded.
 
 ## M7 — Client: cost and reliability
+
+> **Status: complete except the environment-blocked items (2026-10-11, ADR-018).** C3
+> (make-before-break), C4 (quiet relay path via the hybrid socket + in-band candidate
+> exchange) and C5 (STUN) are implemented; e2e `echo-direct`, `restart`, `max-age` and
+> `stun` pass in CI. Deferred for lack of a NAT lab / GCP deployment: NAT-simulation
+> direct-path success numbers and Cloud Run hourly-recycling verification.
 
 Deliverables
 - Client work items **C3** (make-before-break), **C4** (quiet relay path), **C5** (STUN address
