@@ -1,0 +1,38 @@
+# Local Cairn Pool (doc 05/06): two relay containers + Valkey, for smoke checks without a
+# cloud deployment. Usage:
+#   docker compose -f deploy/docker/docker-compose.yml up --build
+#   cargo run -p e2e -- --cairn ws://127.0.0.1:8081 --scenario smoke   # (node 1)
+#   cargo run -p e2e -- --cairn ws://127.0.0.1:8082 --scenario smoke   # (node 2)
+# Both nodes share the router; clients on different nodes reach each other through it.
+name: cairn-pool
+
+services:
+  valkey:
+    image: valkey/valkey:7.2
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+
+  cairn-1:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      RELAY_CONFIG: '{"access":{"mode":"open"},"region":"pool-1","router":{"kind":"redis","redis":{"url":"redis://valkey:6379"}},"ports":{"relay":8080,"admin":9090}}'
+    ports:
+      - "8081:8080"
+      - "9091:9090"
+    depends_on:
+      - valkey
+
+  cairn-2:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      RELAY_CONFIG: '{"access":{"mode":"open"},"region":"pool-2","router":{"kind":"redis","redis":{"url":"redis://valkey:6379"}},"ports":{"relay":8080,"admin":9090}}'
+    ports:
+      - "8082:8080"
+      - "9092:9090"
+    depends_on:
+      - valkey

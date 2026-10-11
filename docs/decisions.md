@@ -194,6 +194,26 @@ Cloudflare (billed 1/20-request each) instead of the old iroh-style 5 s keepaliv
 acceptance (relay frames → 0 within 35 s of going direct) must account for the
 self-keepalive cadence: expect ≤1 keepalive frame per 30 s quiet interval, not zero.
 
+## ADR-017 — Redis router details: envelope kind 3, Router.ready, single-node cluster tests
+**Context:** M6 needed three small decisions beyond docs/06 while building
+`router-redis`. (a) The registry cap can evict an inactive connection owned by a
+*different* host, so `close` actions must be deliverable cross-host; docs/06 defined
+only deliver/notice envelope kinds. (b) A host must not accept traffic before its
+pub/sub subscription is live, or the first frames published to it vanish (the
+cross-instance flavor of the doc 06 registering race). (c) Differential/cluster tests
+need a cluster in Testcontainers.
+**Decision:** (a) Envelope gains kind 3 (`close`, u16 code) — docs/06 updated. (b)
+`Router` gains optional `readonly ready?: Promise<void>` (docs/03); `RedisRouter.ready`
+resolves after subscribe + host-key set, and `adapter-node` awaits it before listening.
+(c) Cluster conformance uses a single-node cluster (`bitnamilegacy/redis-cluster:7.2.4`,
+fixed host port 17000) bootstrapped with `set-config-epoch` + `cluster addslots` for all
+16384 slots; state flips to `ok` after the cluster-node-timeout (~15s).
+**Consequences:** Lua and `core.registryStep` are pinned to each other by a differential
+property test (10k+ random ops, state compared after every op). Provider staging
+deploys (AWS/GCP/Azure) are built (`deploy/aws|gcp|azure`, `tofu validate` clean) but
+NOT applied: no cloud credentials in the environment; the docker-compose pool is the
+deployable proof (image 258 MB, e2e `smoke` on node 1, all scenarios on node 2).
+
 ## Open questions (resolve during the milestones; record outcomes as new ADRs)
 
 - M4/M5: Are client WebSocket pings answered by the Workers runtime without invoking the Worker?

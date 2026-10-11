@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+**/.wrangler
+.git
+docs
+target
+.env
+.env.*
+scripts
+deploy
+.pi
+*.log

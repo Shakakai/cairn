@@ -36,11 +36,16 @@ In cluster mode use **sharded pub/sub** (`SSUBSCRIBE`/`SPUBLISH`) for `h:{...}` 
 ## Envelope format on `h:{hostId}`
 
 ```
-u8  kind            1 = deliver frame, 2 = notice
+u8  kind            1 = deliver frame, 2 = notice, 3 = close (ADR-017)
 u16 connIdLen
 ..  connId (utf8)
-..  payload         kind 1: a relay→client frame (Recv, RecvBatch or PeerGone); kind 2: utf8 notice name
+..  payload         kind 1: a relay→client frame (Recv, RecvBatch or PeerGone);
+                    kind 2: utf8 notice name; kind 3: u16 close code (1008 evictions)
 ```
+
+Kind 3 covers the registry cap (doc 01 §5.1) evicting an *inactive* connection that
+belongs to another host: the registry runs in one Redis primary, so a `close` action may
+target a different host than the caller; it is delivered over that host's channel.
 
 ## Lua scripts
 

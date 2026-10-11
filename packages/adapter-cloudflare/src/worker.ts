@@ -415,7 +415,7 @@ class LinkCache {
     let response: Response;
     try {
       response = await stub.fetch("https://mailbox/link", { headers: { Upgrade: "websocket" } });
-    } catch (error) {
+    } catch {
       metricFn(bindings, "relay_router_errors_total", 1, { kind: "link_open" });
       this.queues.delete(dst);
       return;
@@ -432,11 +432,11 @@ class LinkCache {
 
     const entry: LinkEntry = {
       ws,
-      idleTimer: setTimeout(() => this.closeIdle(dst, config.cf.linkIdleMs), config.cf.linkIdleMs),
+      idleTimer: setTimeout(() => this.closeIdle(dst), config.cf.linkIdleMs),
     };
     this.byEndpoint.set(dst, entry);
     this.touch(dst);
-    this.evictIfNeeded(bindings, config.cf.maxLinksPerIsolate);
+    this.evictIfNeeded(config.cf.maxLinksPerIsolate);
 
     // Flush the opening queue, dropping frames older than 2s.
     const queue = this.queues.get(dst) ?? [];
@@ -460,14 +460,11 @@ class LinkCache {
     const entry = this.byEndpoint.get(dst);
     if (entry !== undefined) {
       clearTimeout(entry.idleTimer);
-      entry.idleTimer = setTimeout(
-        () => this.closeIdle(dst, relayConfigFromCache().cf.linkIdleMs),
-        relayConfigFromCache().cf.linkIdleMs,
-      );
+      entry.idleTimer = setTimeout(() => this.closeIdle(dst), relayConfigFromCache().cf.linkIdleMs);
     }
   }
 
-  private closeIdle(dst: string, _idleMs: number): void {
+  private closeIdle(dst: string): void {
     const entry = this.byEndpoint.get(dst);
     if (entry === undefined) return;
     this.byEndpoint.delete(dst);
@@ -479,12 +476,11 @@ class LinkCache {
     }
   }
 
-  private evictIfNeeded(bindings: Bindings, max: number): void {
+  private evictIfNeeded(max: number): void {
     while (this.byEndpoint.size > max) {
       const oldest = this.lastUsed.keys().next().value;
       if (oldest === undefined) break;
-      this.closeIdle(oldest, 0);
-      void bindings;
+      this.closeIdle(oldest);
     }
   }
 }
@@ -531,7 +527,7 @@ export default {
       if (!decision.ok) {
         return new Response(decision.body, { status: decision.status, headers: decision.headers });
       }
-      return acceptWebSocket(request, ctx, decision, coreEnv, env);
+      return acceptWebSocket(ctx, decision, coreEnv, env);
     }
 
     if (url.pathname === "/healthz" && url.searchParams.has("ready")) {
@@ -557,7 +553,6 @@ export default {
 };
 
 function acceptWebSocket(
-  request: Request,
   executionCtx: ExecutionContext,
   decision: Extract<UpgradeDecision, { ok: true }>,
   coreEnv: Env,

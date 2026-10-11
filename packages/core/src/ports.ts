@@ -55,5 +55,11 @@ export interface Router {
   /** If dst's active connection is held by this process, return it (local fast path). */
   localActive(dst: EndpointId): ConnRef | undefined;
 
+  /**
+   * Resolves once registrations and routes are observable by this router (e.g. the
+   * pub/sub subscription is live). Adapters await this before accepting traffic.
+   */
+  readonly ready?: Promise<void>;
+
   close(): Promise<void>;
 }

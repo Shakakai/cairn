@@ -16,7 +16,6 @@ export class CloudflareRouter implements Router {
   constructor(
     private readonly bindings: Env,
     private readonly host: SocketHost,
-    private readonly options: { maxConnectionsPerEndpoint?: number } = {},
   ) {}
 
   async register(endpoint: EndpointId, conn: ConnRef): Promise<void> {

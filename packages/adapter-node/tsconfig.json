@@ -6,5 +6,15 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../router-memory" }]
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../router-memory"
+    },
+    {
+      "path": "../router-redis"
+    }
+  ]
 }

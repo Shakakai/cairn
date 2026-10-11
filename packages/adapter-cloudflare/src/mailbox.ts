@@ -48,10 +48,6 @@ export class Mailbox extends DurableObject<Env> {
   /** Sent-to set reported by a `bye`, held until the close event. */
   private readonly pendingSentTo = new Map<string, string[]>();
 
-  constructor(ctx: DurableObjectState, env: Env) {
-    super(ctx, env);
-  }
-
   // -------------------------------------------------------------------------
   // HTTP surface: /owner (Worker holding a client conn), /link (any isolate).
   // -------------------------------------------------------------------------

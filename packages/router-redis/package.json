@@ -17,7 +17,15 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@cairn/conformance": "workspace:^",
+    "@types/node": "^26.6.5",
+    "fast-check": "^4.10.2",
+    "testcontainers": "^12.2.0",
     "typescript": "5.9.3",
     "vitest": "4.1.9"
+  },
+  "dependencies": {
+    "@cairn/core": "workspace:^",
+    "ioredis": "^6.0.0"
   }
 }

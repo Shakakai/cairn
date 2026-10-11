@@ -22,11 +22,14 @@ import {
   negotiateUpgrade,
   openConnection,
   type RelayConfig,
+  type Router,
   routeHttp,
   type SocketHost,
   step,
 } from "@cairn/core";
 import { MemoryRouter } from "@cairn/router-memory";
+import { RedisRouter } from "@cairn/router-redis";
+import { Redis } from "ioredis";
 import { WebSocket, WebSocketServer } from "ws";
 import { Metrics } from "./metrics.js";
 import { type AccessPolicy, makeAccessPolicy } from "./policy.js";
@@ -152,8 +155,19 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
   let draining = false;
   let keepalive: NodeJS.Timeout | undefined;
 
-  const router = new MemoryRouter(
-    new (class implements SocketHost {
+  let redisClient: Redis | undefined;
+  let router: Router;
+  if (config.router.kind === "redis") {
+    const url = config.router.redis?.url;
+    if (url === undefined || url === "") {
+      throw new Error("router.kind=redis requires router.redis.url");
+    }
+    redisClient = new Redis(url, { maxRetriesPerRequest: 2, lazyConnect: false });
+    redisClient.on("error", () => {}); // liveness is surfaced via /readyz (doc 06)
+  }
+  // The SocketHost implementation is shared by both routers.
+  function hostImpl(): SocketHost {
+    return new (class implements SocketHost {
       readonly hostId = hostId;
       readonly caps = caps;
       deliver(conn: ConnRef, frame: Uint8Array): void {
@@ -184,13 +198,25 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
         const rt = conns.get(connKeyOf(conn));
         if (rt !== undefined) closeConn(rt, code, reason);
       }
-    })(),
-    {
+    })();
+  }
+
+  if (config.router.kind === "redis") {
+    router = new RedisRouter(redisClient as Redis, hostImpl(), {
+      selfHost: hostId,
+      presenceTtlMs: config.presenceTtlMs,
+      hostTtlMs: config.hostTtlMs,
+      routeCacheMs: config.routeCacheMs,
+      maxConnectionsPerEndpoint: config.maxConnectionsPerEndpoint,
+      sentToMax: config.sentToMax,
+    });
+  } else {
+    router = new MemoryRouter(hostImpl(), {
       maxConnectionsPerEndpoint: config.maxConnectionsPerEndpoint,
       sentToMax: config.sentToMax,
       nonceCacheCapacity: config.nonceCacheCapacity,
-    },
-  );
+    });
+  }
 
   // -------------------------------------------------------------------------
   // Per-connection runtime.
@@ -264,10 +290,19 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
           metrics.inc("relay_router_errors_total", 1, { kind: "unregister" });
         });
         break;
-      case "route":
-        // Never block the read loop on routing (doc 03).
+      case "route": {
+        // Local fast path (doc 05): deliver here when this process holds the active
+        // connection; otherwise hand to the router. Never block the read loop (doc 03).
+        const local = router.localActive(effect.dst);
+        if (local !== undefined) {
+          const rt = conns.get(connKeyOf(local));
+          if (rt !== undefined && !rt.closed) {
+            enqueue(rt, { kind: "deliver", frame: effect.frame });
+            break;
+          }
+        }
         router.route(effect.dst, effect.frame).then(
-          (result) => {
+          (result: "delivered" | "offline") => {
             if (result === "offline") {
               metrics.inc("relay_frames_dropped_total", 1, { reason: "offline" });
             }
@@ -278,6 +313,7 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
           },
         );
         break;
+      }
       case "pauseReads":
         rt.ws.pause();
         break;
@@ -411,8 +447,10 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
   function handleRequest(req: IncomingMessage, res: import("node:http").ServerResponse): void {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname === "/healthz" && url.searchParams.has("ready")) {
-      // Drain-aware readiness on the serving port (doc 05).
-      const ok = !draining;
+      // Drain-aware readiness on the serving port (doc 05); with a Redis router the
+      // connection must be up too (doc 06).
+      const redisUp = redisClient === undefined || redisClient.status === "ready";
+      const ok = !draining && redisUp;
       res.writeHead(ok ? 200 : 503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: ok ? "ok" : "draining" }));
       return;
@@ -512,6 +550,10 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
   // -------------------------------------------------------------------------
   // Start, keepalive, drain, shutdown.
   // -------------------------------------------------------------------------
+
+  // A Redis router must have its subscription live before we accept traffic, or the
+  // first frames published to this host vanish (docs/05, 06).
+  await router.ready;
 
   const port = options.port ?? config.ports.relay;
   await new Promise<void>((resolve, reject) => {
