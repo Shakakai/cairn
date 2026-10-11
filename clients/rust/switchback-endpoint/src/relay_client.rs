@@ -410,7 +410,9 @@ async fn actor(
                 }
                 last_activity = std::time::Instant::now();
             }
-            msg = conn.ws.next() => {
+            // A dead current connection (closed while a C3 replacement is pending)
+            // would otherwise return Ready(None) forever and spin this task.
+            msg = conn.ws.next(), if !conn_dead => {
                 let Some(msg) = msg else {
                     fail_connection(&mut conn, &shared).await;
                     conn_dead = true;
