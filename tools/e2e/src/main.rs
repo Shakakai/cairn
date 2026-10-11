@@ -544,6 +544,7 @@ async fn echo_direct(cairn: &str) -> Result<(), String> {
 /// Server drains (Restarting + close 1012); the client must reconnect make-before-break
 /// (C3) with zero application message loss on a reliable stream (docs/08).
 async fn restart(cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
+    println!("restart: building endpoints");
     let admin = cairn_admin.ok_or("restart requires --cairn-admin <admin url>")?;
     let cfg = config(cairn);
     let a = builder_relay_only(&cfg)
@@ -569,8 +570,11 @@ async fn restart(cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
         conn.closed().await;
     });
 
+    println!("restart: connecting");
     let conn = a.connect(&peer_b).await.map_err(|e| e.to_string())?;
+    println!("restart: connected, opening stream");
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+    println!("restart: stream open");
     let reader = tokio::spawn(async move {
         let mut data = Vec::new();
         while let Some(chunk) = recv.read_chunk(1 << 20, true).await.unwrap() {
@@ -587,6 +591,7 @@ async fn restart(cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
         write_bounded(&mut send, msg.as_bytes(), "pre-drain stream").await?;
     }
     // Trigger the server drain mid-stream.
+    println!("restart: triggering drain");
     let client = reqwestless::post(&format!("{admin}/drain")).await?;
     if client != 202 {
         return Err(format!("drain trigger returned {client}"));
@@ -597,10 +602,12 @@ async fn restart(cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
         write_bounded(&mut send, msg.as_bytes(), "through-drain stream").await?;
     }
     send.finish().unwrap();
+    println!("restart: waiting for echo");
     let echoed = tokio::time::timeout(Duration::from_secs(60), reader)
         .await
         .map_err(|_| "echo did not complete after drain".to_string())?
         .unwrap();
+    println!("restart: echo complete");
     if echoed != expected {
         return Err(format!(
             "message loss across the restart: expected {} bytes, got {}",
