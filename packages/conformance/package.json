@@ -19,10 +19,12 @@
   "devDependencies": {
     "@cairn/router-memory": "workspace:^",
     "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
   },
   "dependencies": {
-    "@cairn/core": "workspace:^"
+    "@cairn/core": "workspace:^",
+    "ws": "^8.22.0"
   }
 }

@@ -4,5 +4,7 @@
  * Cloudflare mailbox (M5).
  */
 
+export * from "./client.js";
+export * from "./hostSuite.js";
 export * from "./recordingHost.js";
 export * from "./routerSuite.js";

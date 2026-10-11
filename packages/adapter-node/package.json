@@ -14,10 +14,21 @@
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "RELAY_CONFIG=${RELAY_CONFIG:-'{\"access\":{\"mode\":\"open\"},\"region\":\"dev\"}'} tsx src/main.ts",
+    "start": "node dist/main.js"
   },
   "devDependencies": {
+    "@cairn/conformance": "workspace:^",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
+  },
+  "dependencies": {
+    "@cairn/core": "workspace:^",
+    "@cairn/router-memory": "workspace:^",
+    "ws": "^8.22.0"
   }
 }
