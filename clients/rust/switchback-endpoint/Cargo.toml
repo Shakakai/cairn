@@ -6,3 +6,19 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+switchback-proto = { workspace = true }
+quinn = { version = "0.11", default-features = false, features = ["rustls", "runtime-tokio"] }
+quinn-udp = "0.5"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
+rustls-pki-types = "1"
+tokio = { version = "1", features = ["rt", "macros", "sync", "time", "net", "io-util"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+bytes = "1"
+getrandom = "0.2"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

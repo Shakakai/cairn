@@ -111,10 +111,28 @@ relays QUIC datagrams). `Status(2 RateLimited)` at most once per connection. (c)
 re-register semantics (a re-register of the active conn is a no-op; of an inactive conn it
 is promoted through the normal newest-wins path).
 
+## ADR-013 — QUIC protocol library: quinn
+**Context:** The client is a from-scratch implementation (ADR-010). We need a production QUIC
+stack (handshake, streams, congestion control, path management) but not our own protocol
+wire format: the Switchback v1 wire is relay frames + our endpoint identity layer, which we
+own. Writing a QUIC implementation is years of work and explicitly out of scope.
+**Decision:** `switchback-endpoint` builds on [`quinn`](https://docs.rs/quinn) 1.x as its
+QUIC protocol engine. Cairn relay paths are realised by implementing quinn's
+`AsyncUdpSocket` trait over the Switchback v1 relay client (Send/Recv frames in place of
+UDP datagrams); each peer EndpointId maps to a deterministic reserved IPv4 address
+(240.0.0.0/4) so quinn's connection model works unchanged. Endpoint identity is Ed25519
+(doc 01): each endpoint's TLS certificate carries an extension
+`endpoint_id || ed25519_sign(tls_spki || endpoint_id)`, verified by both sides on connect.
+Alternatives considered: s2n-quic (heavier, smaller ecosystem), quiche (C++ build),
+custom QUIC (rejected: out of scope).
+**Consequences:** QUIC wire internals (crypto, ACKs, congestion) are quinn's; everything the
+relay sees (frames, addressing, identity proofs) is Switchback v1 and testable via the
+shared vectors. Future IP/holepunching paths (M7) plug additional `AsyncUdpSocket`s into
+the same endpoint.
+
 ## Open questions (resolve during the milestones; record outcomes as new ADRs)
 
 - M4/M5: Are client WebSocket pings answered by the Workers runtime without invoking the Worker?
-- M4: Which QUIC protocol library underlies `switchback-endpoint`'s socket layer?
 - M5: Worker CPU accumulation and subrequest limits on long-lived sockets (doc 04 risks 1–2).
 - M6: Container Apps ingress idle timeout and maximum WebSocket duration.
 - M7: STUN vs relay-based address discovery direct-path success rates in NAT simulation.

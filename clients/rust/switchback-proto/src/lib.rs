@@ -9,9 +9,9 @@ pub mod frames;
 pub mod keys;
 
 pub use auth::{
-    build_auth_message, create_auth_blob, decode_auth_blob, encode_auth_blob, normalize_host,
-    verify_auth_blob, AuthBlob, AuthBlobParts, AuthFailure, AUTH_BLOB_LENGTH, AUTH_BLOB_VERSION,
-    AUTH_NONCE_LENGTH,
+    build_auth_message, create_auth_blob, decode_auth_blob, encode_auth_blob, encode_auth_blob_b64,
+    normalize_host, verify_auth_blob, AuthBlob, AuthBlobParts, AuthFailure, AUTH_BLOB_LENGTH,
+    AUTH_BLOB_VERSION, AUTH_NONCE_LENGTH,
 };
 pub use crypto::{
     blake3_derive_key, ed25519_public_key, ed25519_sign, ed25519_verify_strict,

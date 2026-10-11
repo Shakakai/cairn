@@ -29,6 +29,21 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # M4 acceptance: the e2e scenarios run against a local Node relay (dist was built
+      # in the Build step).
+      - name: Start local Cairn for e2e
+        run: |
+          RELAY_CONFIG='{"access":{"mode":"open"},"ports":{"relay":18080,"admin":18090}}' \
+            node packages/adapter-node/dist/main.js > /tmp/cairn-e2e.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:18080/healthz > /dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+          curl -sf http://127.0.0.1:18080/healthz
+
+      - name: e2e scenarios
+        run: cargo run -p e2e -- --cairn ws://127.0.0.1:18080 --scenario all
+
   rust:
     name: Rust (cargo test)
     runs-on: ubuntu-latest

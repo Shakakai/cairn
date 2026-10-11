@@ -6,3 +6,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+switchback-endpoint = { workspace = true }
+switchback-proto = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
+tokio-tungstenite = { version = "0.30" }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
