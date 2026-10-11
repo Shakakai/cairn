@@ -3,10 +3,10 @@ import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import WebSocket from "ws";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createAuthBlob, decodeRelayFrame, ed25519PublicKey, encodeBase64Url } from "@cairn/core";
-import { startRelay, type RelayHandle } from "../src/relay.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import WebSocket from "ws";
+import { type RelayHandle, startRelay } from "../src/relay.js";
 
 let certFile = "";
 let keyFile = "";
