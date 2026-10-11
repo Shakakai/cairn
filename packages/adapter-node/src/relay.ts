@@ -5,7 +5,9 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import type { Duplex } from "node:stream";
 import {
   type Capabilities,
@@ -110,6 +112,24 @@ function statusText(status: number): string {
     503: "Service Unavailable",
   };
   return texts[status] ?? "Error";
+}
+
+/**
+ * Create the relay HTTP(S) server for the configured TLS mode (doc 05): `offload`
+ * serves plain HTTP (a load balancer terminates TLS); `terminate` serves TLS with the
+ * configured certificate files (VMs, NLB TCP pass-through).
+ */
+function createRelayServer(config: RelayConfig): Server {
+  if (config.tls.mode === "terminate") {
+    if (config.tls.certFile === undefined || config.tls.keyFile === undefined) {
+      throw new Error("tls.mode=terminate requires tls.certFile and tls.keyFile");
+    }
+    return createHttpsServer({
+      cert: readFileSync(config.tls.certFile),
+      key: readFileSync(config.tls.keyFile),
+    }) as unknown as Server;
+  }
+  return createServer();
 }
 
 export async function startRelay(options: StartRelayOptions = {}): Promise<RelayHandle> {
@@ -405,7 +425,11 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
     res.end(response.body);
   }
 
-  const server: Server = createServer(handleRequest);
+  const server: Server =
+    config.tls.mode === "terminate" ? createRelayServer(config) : createServer(handleRequest);
+  if (config.tls.mode === "terminate") {
+    server.on("request", handleRequest);
+  }
 
   server.on("upgrade", (req, socket, head) => {
     (async () => {
