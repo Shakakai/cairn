@@ -81,7 +81,7 @@ Unknown keys are an error.
 | `tls.mode` | `"offload"` | Node: `offload` \| `terminate` (+ `tls.certFile`, `tls.keyFile`) |
 | `caps.maxConnectionMs` | unset | set per platform (Cloud Run 3600000) |
 | `cf.maxOutboundFramesPerSec` | 2000 | Cloudflare |
-| `cf.linkIdleMs` | 60000 | Cloudflare |
+| `cf.linkIdleMs` | 45000 | Cloudflare; below the measured ~60-75s platform reap of idle Worker→DO sockets (ADR-016) |
 | `cf.maxLinksPerIsolate` | 1024 | Cloudflare |
 | `metrics.sampleRate` | 1.0 Node / 0.01 Cloudflare | Analytics Engine writes are sampled |
 | `ports.relay` / `ports.admin` | 8080 / 9090 | Node |

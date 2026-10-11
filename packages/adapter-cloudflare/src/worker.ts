@@ -53,6 +53,29 @@ interface ConnEntry {
 
 const local = new Map<string, ConnEntry>();
 const activeByEndpoint = new Map<string, string>(); // EndpointId -> connKey
+
+// Owner-socket keepalive (ADR-016): the platform reaps idle Worker→DO WebSockets after
+// roughly a minute; a dead owner socket kills the client connection ("mailbox lost").
+// Worker→DO pings are free and do not wake hibernated objects (docs/04 billing facts).
+// Links are intentionally NOT pinged: they idle-close and reopen on demand, which keeps
+// idle Durable Objects hibernated. Timers may not be created at module scope, so the
+// interval starts lazily on the first request.
+let ownerKeepalive: ReturnType<typeof setInterval> | undefined;
+function ensureOwnerKeepalive(): void {
+  if (ownerKeepalive !== undefined) return;
+  ownerKeepalive = setInterval(() => {
+    for (const entry of local.values()) {
+      if (entry.closed || entry.owner === undefined) continue;
+      const owner = entry.owner as WebSocket & { ping?: () => void };
+      if (typeof owner.ping !== "function") continue;
+      try {
+        owner.ping();
+      } catch {
+        // closing
+      }
+    }
+  }, 25_000);
+}
 let links: LinkCache | undefined;
 const linkCache = (): LinkCache => {
   links ??= new LinkCache();
@@ -479,6 +502,7 @@ const draining = false;
 
 export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
+    ensureOwnerKeepalive();
     const url = new URL(request.url);
     const coreEnv = makeEnv(env, request);
 

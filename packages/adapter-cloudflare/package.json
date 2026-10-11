@@ -17,7 +17,9 @@
     "dev": "wrangler dev --port 8787",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:prod": "wrangler deploy --env prod",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "login": "wrangler login",
+    "whoami": "wrangler whoami"
   },
   "devDependencies": {
     "@cairn/conformance": "workspace:^",

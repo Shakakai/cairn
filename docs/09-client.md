@@ -48,6 +48,9 @@ Each item is its own commit (C1…C7) with tests.
 ### C2 — WebSocket keepalive
 
 - WebSocket **ping control frame** every 15 s; pong expected within 5 s; else reconnect.
+- Measured on Cloudflare (ADR-016): control pings alone do not stop eyeball idle reaping;
+  when no data has flowed for 30 s the client sends an empty datagram to itself
+  (doc 01 §6). On Node (Cairn Pool) pings suffice — the self-keepalive is harmless there.
 
 ### C3 — Make-before-break reconnects
 

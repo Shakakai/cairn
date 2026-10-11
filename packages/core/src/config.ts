@@ -85,7 +85,9 @@ export const defaultRelayConfig: RelayConfig = {
   router: { kind: "memory" },
   cf: {
     maxOutboundFramesPerSec: 2_000,
-    linkIdleMs: 60_000,
+    // Below the measured platform reap of idle Worker→DO sockets (~60-75s, ADR-016):
+    // closing first means the next send reopens transparently instead of vanishing.
+    linkIdleMs: 45_000,
     maxLinksPerIsolate: 1_024,
   },
   metrics: { sampleRate: 1 },

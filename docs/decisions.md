@@ -160,6 +160,40 @@ staging). The `activeByEndpoint` map remains for metrics/future use. Binary WebS
 payloads may arrive as `Blob` or `ArrayBufferView` depending on the runtime: adapters
 must normalise (`toBytes`).
 
+## ADR-016 — Cloudflare staging: measured platform behaviours (doc 04 risks 1–4) and the data-keepalive
+**Context:** Doc 04 lists five risks to measure on real Cloudflare infrastructure. With
+account credentials available, Cairn Edge staging was deployed
+(`cairn-staging.veracity-agent.workers.dev`, workers.dev subdomain; a custom domain on
+the `veracity.software` zone is possible later for port-80 `/v1/captive`).
+**Measurements (2026-10-11, staging, us-region client):**
+1. *Worker CPU accumulation on long-lived sockets*: a connection with a 20 s data
+   exchange cycle **held 400 s with no kill** — no 30 s/5 min CPU ceiling was observed.
+2. *Link sockets vs the 10k subrequest cap*: **12 000 distinct destinations from one
+   client connection in 7.7 s; the invocation survived.** Link opens do not trip the
+   cap (or are not counted as subrequests).
+3. *Client pings without invoking the Worker*: 5/5 pings answered — confirmed the
+   platform answers pings itself.
+4. *DO wake latency*: warm frame RTTs 24–46 ms; first frame after >65 s hibernation
+   **55.6 ms** (wake adds ~10–30 ms), second frame 21 ms.
+5. *Quiet-relay frames*: not separately measured (superseded by finding below).
+**Finding that changed the design:** Cloudflare **reaps eyeball WebSockets after ~1–2
+minutes of data silence regardless of control pings** (ping-only client died ≈75 s in;
+client sending data survived indefinitely). WS control pings do not count as activity.
+**Decision:** (a) The client (C2) keeps its 15 s pings for liveness, and additionally
+sends an **empty datagram to itself** whenever no data has flowed for 30 s (doc 01 §6
+updated; self-sends are explicitly allowed and relayed as ordinary traffic). (b) Cached
+links now idle-close at **45 s** (`cf.linkIdleMs`, below the measured reap): our own
+close fires before the platform's silent reap, so the next send reopens the link instead
+of vanishing into a dead socket. (c) The Worker pings owner sockets every 25 s where the
+runtime exposes `ping()` on DO-fetch sockets. (d) Doc 04's risk list is updated with
+these numbers; staging deploys use `workers_dev` (envs don't inherit
+`durable_objects`/`analytics_engine_datasets` — they are declared per env).
+**Consequences:** Quiet connections now cost ≤2 self-keepalive frames/minute on
+Cloudflare (billed 1/20-request each) instead of the old iroh-style 5 s keepalives
+(12/min) — still a ~60× improvement, and zero on Cairn Pool. M7's `echo-direct`
+acceptance (relay frames → 0 within 35 s of going direct) must account for the
+self-keepalive cadence: expect ≤1 keepalive frame per 30 s quiet interval, not zero.
+
 ## Open questions (resolve during the milestones; record outcomes as new ADRs)
 
 - M4/M5: Are client WebSocket pings answered by the Workers runtime without invoking the Worker?

@@ -15,12 +15,20 @@
   "env": {
     "staging": {
       "name": "cairn-staging",
-      "routes": [{ "pattern": "cairn-staging.example.net", "custom_domain": true }],
+      "workers_dev": true,
+      "durable_objects": {
+        "bindings": [{ "name": "MAILBOX", "class_name": "Mailbox" }]
+      },
+      "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "cairn-staging" }],
       "vars": { "RELAY_CONFIG": "{\"access\":{\"mode\":\"open\"},\"region\":\"cf-staging\"}" }
     },
     "prod": {
       "name": "cairn",
       "routes": [{ "pattern": "cairn.example.net", "custom_domain": true }],
+      "durable_objects": {
+        "bindings": [{ "name": "MAILBOX", "class_name": "Mailbox" }]
+      },
+      "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "cairn" }],
       "vars": { "RELAY_CONFIG": "{\"access\":{\"mode\":\"token\"},\"region\":\"cf\"}" }
     }
   }

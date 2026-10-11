@@ -295,6 +295,12 @@ async fn connect_and_run(
     ping_timer.tick().await; // consume the immediate first tick
     let mut pong_deadline = Box::pin(tokio::time::sleep(PING_INTERVAL + PONG_TIMEOUT));
     let mut awaiting_pong = false;
+    // Platform keepalive (ADR-016): Cloudflare reaps eyeball WebSockets after ~1-2 min
+    // of data silence regardless of control pings; an empty datagram to ourselves
+    // ("sending to yourself is allowed", doc 01 §4.2/§5.1) keeps quiet connections
+    // alive on every platform. Sent only when nothing else has flowed recently.
+    let mut last_activity = std::time::Instant::now();
+    const DATA_KEEPALIVE_AFTER: std::time::Duration = Duration::from_secs(30);
 
     loop {
         tokio::select! {
@@ -304,6 +310,13 @@ async fn connect_and_run(
                 ws.send(Message::Ping(Bytes::from(payload.to_vec()))).await?;
                 awaiting_pong = true;
                 pong_deadline.as_mut().reset(tokio::time::Instant::now() + PONG_TIMEOUT);
+                if last_activity.elapsed() >= DATA_KEEPALIVE_AFTER {
+                    // Quiet connection: self-keepalive (ADR-016).
+                    let frame = build_send_frame(&endpoint_bytes, 0, &[]);
+                    recorder.record(true, &frame);
+                    ws.send(Message::Binary(Bytes::from(frame))).await?;
+                    last_activity = std::time::Instant::now();
+                }
             }
             _ = &mut pong_deadline, if awaiting_pong => {
                 // C2: no pong within 5s of our ping: drop; the outer loop reconnects.
@@ -314,6 +327,7 @@ async fn connect_and_run(
                 let frame = build_send_frame(&dst, ecn, &payload);
                 recorder.record(true, &frame);
                 ws.send(Message::Binary(Bytes::from(frame))).await?;
+                last_activity = std::time::Instant::now();
             }
             msg = ws.next() => {
                 let Some(msg) = msg else { return Ok(()) };

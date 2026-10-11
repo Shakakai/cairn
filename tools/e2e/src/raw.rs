@@ -9,8 +9,24 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use switchback_proto::create_auth_blob;
 
 /// A successful upgrade with a fixed nonce (the first half of the replay scenario).
+/// Waits for ServerInfo so the relay-side registration (and nonce claim) has landed
+/// before the socket closes.
 pub async fn connect_ok(cairn: &str, seed: [u8; 32], nonce: [u8; 16]) -> Result<(), String> {
     let mut ws = connect_with_nonce(cairn, seed, nonce).await?;
+    use futures_util::StreamExt;
+    let deadline = tokio::time::sleep(std::time::Duration::from_secs(10));
+    tokio::pin!(deadline);
+    loop {
+        tokio::select! {
+            msg = ws.next() => match msg {
+                Some(Ok(Message::Binary(_))) => break, // ServerInfo (first frame)
+                Some(Ok(_)) => continue,
+                other => return Err(format!("unexpected message before ServerInfo: {other:?}")),
+            },
+            _ = &mut deadline => return Err("timed out waiting for ServerInfo".into()),
+        }
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     ws.send(Message::Close(None)).await.map_err(|e| e.to_string())?;
     Ok(())
 }
