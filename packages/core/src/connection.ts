@@ -88,12 +88,20 @@ export function effectiveMaxConnectionMs(env: Env): number {
   return capAge ?? 0;
 }
 
-/** Jitter uniform in [30 s, 120 s] from env.random, so reconnect waves spread out (docs/02). */
-function connectionAgeJitterMs(env: Env): number {
+/**
+ * Jitter so reconnect waves spread out (docs/02): uniform in [30 s, 120 s] for
+ * normal ages, scaled down proportionally for degenerate small ages (< ~4 min) so
+ * closeAt always stays in the future (the recycle then lands at age/2..age·3/4
+ * instead of clamping to ~1 s).
+ */
+export function connectionAgeJitterMs(maxAgeMs: number, env: Env): number {
+  const low = Math.min(30_000, Math.floor(maxAgeMs / 4));
+  const high = Math.min(120_000, Math.floor(maxAgeMs / 2));
+  const span = Math.max(1, high - low);
   const rand = env.random(4);
   const u32 =
     ((rand[0] ?? 0) | ((rand[1] ?? 0) << 8) | ((rand[2] ?? 0) << 16) | ((rand[3] ?? 0) << 24)) >>> 0;
-  return 30_000 + (u32 % 90_001);
+  return low + (u32 % (span + 1));
 }
 
 /**
@@ -107,8 +115,8 @@ export function openConnection(
   const maxAgeMs = effectiveMaxConnectionMs(env);
   let closeAtMs: number | undefined;
   if (maxAgeMs > 0) {
-    closeAtMs = env.nowMs + maxAgeMs - connectionAgeJitterMs(env);
-    if (closeAtMs <= env.nowMs) closeAtMs = env.nowMs + 1_000; // tiny ages still close cleanly
+    closeAtMs = env.nowMs + maxAgeMs - connectionAgeJitterMs(maxAgeMs, env);
+    if (closeAtMs <= env.nowMs) closeAtMs = env.nowMs + 1_000; // paranoia: never in the past
   }
 
   const rateBytesPerSec = env.config.rateLimit.bytesPerSecond;

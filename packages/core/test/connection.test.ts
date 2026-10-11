@@ -127,6 +127,14 @@ describe("connection state machine (docs/02)", () => {
     const untilClose = (state.closeAtMs ?? 0) - now;
     expect(untilClose).toBeGreaterThanOrEqual(600_000 - 120_000);
     expect(untilClose).toBeLessThanOrEqual(600_000 - 30_000);
+    // Degenerate small ages: the jitter scales down so closeAt stays in the future.
+    const small = openConnection(
+      { conn: { host: "h", id: "small" }, decision: decision() },
+      makeEnv({ config: { maxConnectionAgeMs: 4_000 } }).env,
+    );
+    const smallUntil = (small.state.closeAtMs ?? 0) - small.state.openedAtMs;
+    expect(smallUntil).toBeGreaterThanOrEqual(2_000);
+    expect(smallUntil).toBeLessThanOrEqual(3_000);
     const timer = effects[2];
     if (timer?.kind !== "timer") throw new Error("third effect must be timer");
     expect(timer.atMs).toBe(state.closeAtMs);

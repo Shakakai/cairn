@@ -132,12 +132,22 @@ async fn main() {
     let start = std::time::Instant::now();
     for scenario in scenarios {
         let t = std::time::Instant::now();
-        match run(scenario, &opts.cairn, opts.cairn_admin.as_deref()).await {
+        // Hard deadline: an individual scenario must never hang the run (a stalled
+        // stream write would otherwise block forever).
+        let result = tokio::time::timeout(std::time::Duration::from_secs(120), run(scenario, &opts.cairn, opts.cairn_admin.as_deref())).await;
+        match result {
+            Err(_) => {
+                failures += 1;
+                println!("FAIL {}: timed out after 120s", scenario.name());
+                continue;
+            }
+            Ok(result) => match result {
             Ok(()) => println!("PASS {} ({:.1}s)", scenario.name(), t.elapsed().as_secs_f64()),
             Err(error) => {
                 failures += 1;
                 println!("FAIL {}: {error}", scenario.name());
             }
+        }
         }
     }
     println!("total: {:.1}s", start.elapsed().as_secs_f64());
@@ -502,7 +512,7 @@ async fn echo_direct(cairn: &str) -> Result<(), String> {
     for i in 0..1000 {
         let msg = format!("direct {i}");
         expected.extend_from_slice(msg.as_bytes());
-        send.write_all(msg.as_bytes()).await.unwrap();
+        write_bounded(&mut send, msg.as_bytes(), "direct echo stream").await?;
     }
     send.finish().unwrap();
     let echoed = reader.await.unwrap();
@@ -574,7 +584,7 @@ async fn restart(cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
     for i in 0..500 {
         let msg = format!("through-drain {i}");
         expected.extend_from_slice(msg.as_bytes());
-        send.write_all(msg.as_bytes()).await.unwrap();
+        write_bounded(&mut send, msg.as_bytes(), "pre-drain stream").await?;
     }
     // Trigger the server drain mid-stream.
     let client = reqwestless::post(&format!("{admin}/drain")).await?;
@@ -584,7 +594,7 @@ async fn restart(cairn: &str, cairn_admin: Option<&str>) -> Result<(), String> {
     for i in 500..1000 {
         let msg = format!("through-drain {i}");
         expected.extend_from_slice(msg.as_bytes());
-        send.write_all(msg.as_bytes()).await.unwrap();
+        write_bounded(&mut send, msg.as_bytes(), "through-drain stream").await?;
     }
     send.finish().unwrap();
     let echoed = tokio::time::timeout(Duration::from_secs(60), reader)
@@ -652,7 +662,7 @@ async fn restart_like(cairn: &str, _unused: Option<&str>) -> Result<(), String> 
     while std::time::Instant::now() < deadline {
         let msg = format!("through-age {i}");
         expected.extend_from_slice(msg.as_bytes());
-        send.write_all(msg.as_bytes()).await.unwrap();
+        write_bounded(&mut send, msg.as_bytes(), "through-age stream").await?;
         i += 1;
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -704,6 +714,19 @@ async fn stun() -> Result<(), String> {
 
 /// Local runs: no external STUN needed for the direct path on loopback.
 fn cfg_stun_local(_cfg: &SwitchbackConfig) {}
+
+/// Write with a bound: a stalled stream must fail the scenario, never hang it.
+async fn write_bounded<S>(send: &mut S, bytes: &[u8], what: &str) -> Result<(), String>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+    let b = bytes.to_vec();
+    tokio::time::timeout(Duration::from_secs(30), send.write_all(&b))
+        .await
+        .map_err(|_| format!("{what}: write stalled for 30s"))?
+        .map_err(|e| e.to_string())
+}
 
 /// Minimal HTTP POST helper (no reqwest dependency).
 mod reqwestless {
