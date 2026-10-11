@@ -509,7 +509,9 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
     const now = Date.now();
     for (const rt of conns.values()) {
       if (rt.closed) continue;
-      if (now - rt.lastPongAtMs > config.serverPongTimeoutMs) {
+      // Allow one full ping interval plus the pong timeout before declaring death: a live
+      // client answers each ping within the interval, refreshing lastPongAtMs.
+      if (now - rt.lastPongAtMs > config.serverPingMs + config.serverPongTimeoutMs) {
         rt.ws.terminate();
       } else {
         try {

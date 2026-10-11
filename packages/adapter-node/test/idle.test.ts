@@ -58,8 +58,9 @@ describe("idle connection soak (doc 11 M3)", () => {
     // Read the ServerInfo of a sample; all sockets are open by definition of connect().
     await clients[0]?.nextFrameOfType("serverInfo");
 
-    // Hold idle briefly (client pings every 15 s would fire here in long soaks).
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    // Hold idle across at least one full server keepalive cycle (30s ping + 10s pong
+    // timeout) — regression: idle sockets must survive it.
+    await new Promise((resolve) => setTimeout(resolve, 33_000));
 
     const alive = clients.filter((c) => c.readyState === 1).length;
     const elapsed = (Date.now() - startMs) / 1000;
