@@ -1,8 +1,25 @@
+import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createAuthBlob, decodeRelayFrame, ed25519PublicKey, encodeBase64Url } from "@cairn/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import WebSocket from "ws";
-import { type RelayHandle, startRelay } from "../src/relay.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createAuthBlob, decodeRelayFrame, ed25519PublicKey, encodeBase64Url } from "@cairn/core";
+import { startRelay, type RelayHandle } from "../src/relay.js";
+
+let certFile = "";
+let keyFile = "";
+
+beforeAll(() => {
+  const dir = mkdtempSync(join(tmpdir(), "cairn-tls-"));
+  certFile = join(dir, "cert.pem");
+  keyFile = join(dir, "key.pem");
+  execSync(
+    `openssl req -x509 -newkey rsa:2048 -keyout "${keyFile}" -out "${certFile}" -days 1 -nodes -subj '/CN=localhost'`,
+    { stdio: "ignore" },
+  );
+});
 
 let relay: RelayHandle | undefined;
 afterEach(async () => {
@@ -15,7 +32,7 @@ describe("TLS terminate mode (doc 05)", () => {
     relay = await startRelay({
       config: {
         access: { mode: "open" },
-        tls: { mode: "terminate", certFile: "/tmp/cairn-cert.pem", keyFile: "/tmp/cairn-key.pem" },
+        tls: { mode: "terminate", certFile, keyFile },
       },
       port: 0,
       adminPort: undefined,
