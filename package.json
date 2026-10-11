@@ -14,7 +14,12 @@
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
     "typescript": "5.9.3",
-    "vitest": "3.2.4"
+    "vitest": "4.1.9"
   },
-  "packageManager": "pnpm@9.15.9"
+  "packageManager": "pnpm@9.15.9",
+  "pnpm": {
+    "overrides": {
+      "workerd": "1.20261011.1"
+    }
+  }
 }

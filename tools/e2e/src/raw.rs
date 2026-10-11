@@ -10,6 +10,52 @@ use switchback_proto::create_auth_blob;
 
 /// A successful upgrade with a fixed nonce (the first half of the replay scenario).
 pub async fn connect_ok(cairn: &str, seed: [u8; 32], nonce: [u8; 16]) -> Result<(), String> {
+    let mut ws = connect_with_nonce(cairn, seed, nonce).await?;
+    ws.send(Message::Close(None)).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Platform-tolerant replay assertion (doc 01 §3.1): Node rejects the upgrade with
+/// 401 before accept; Cloudflare accepts and then closes with 1008.
+pub async fn expect_replayed(cairn: &str, seed: [u8; 32], nonce: [u8; 16]) -> Result<(), String> {
+    match tokio_tungstenite::connect_async(auth_request(cairn, seed, nonce)?).await {
+        Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+            let status = response.status().as_u16();
+            let body = response
+                .body()
+                .as_ref()
+                .map(|b| String::from_utf8_lossy(b).to_string())
+                .unwrap_or_default();
+            if status == 401 && body.trim() == "auth: replay" {
+                Ok(())
+            } else {
+                Err(format!("expected 401 auth: replay, got {status} {body}"))
+            }
+        }
+        Err(other) => Err(format!("unexpected error: {other}")),
+        Ok((mut ws, _)) => {
+            // Cloudflare path: accepted (ServerInfo arrives first), then closed with
+            // 1008 once the mailbox rejects the replayed nonce.
+            let read = async move {
+                use futures_util::StreamExt;
+                loop {
+                    match ws.next().await {
+                        Some(Ok(Message::Close(Some(frame)))) if u16::from(frame.code) == 1008 => {
+                            return Ok(())
+                        }
+                        Some(Ok(_)) => continue,
+                        other => return Err(format!("expected close 1008, got {other:?}")),
+                    }
+                }
+            };
+            tokio::time::timeout(std::time::Duration::from_secs(10), read)
+                .await
+                .map_err(|_| "timed out waiting for the 1008 replay close".to_string())?
+        }
+    }
+}
+
+fn auth_request(cairn: &str, seed: [u8; 32], nonce: [u8; 16]) -> Result<Request, String> {
     let (connect_url, auth_host) = parts(cairn);
     let endpoint = switchback_proto::ed25519_public_key(&seed);
     let blob = create_auth_blob(&seed, &auth_host, &endpoint, now_unix_ms(), &nonce);
@@ -21,11 +67,18 @@ pub async fn connect_ok(cairn: &str, seed: [u8; 32], nonce: [u8; 16]) -> Result<
     request
         .headers_mut()
         .insert("Switchback-Auth", auth_header.parse().map_err(|e| format!("{e}"))?);
-    let (mut ws, _) = tokio_tungstenite::connect_async(request)
+    Ok(request)
+}
+
+async fn connect_with_nonce(
+    cairn: &str,
+    seed: [u8; 32],
+    nonce: [u8; 16],
+) -> Result<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, String> {
+    let (ws, _) = tokio_tungstenite::connect_async(auth_request(cairn, seed, nonce)?)
         .await
-        .map_err(|e| format!("first replay connect should succeed: {e}"))?;
-    ws.send(Message::Close(None)).await.map_err(|e| e.to_string())?;
-    Ok(())
+        .map_err(|e| format!("connect should succeed: {e}"))?;
+    Ok(ws)
 }
 
 pub enum Auth {
@@ -191,9 +244,71 @@ async fn http_get_header(url: &str, headers: &[(&str, &str)]) -> Result<HttpResp
     }
     head.push_str("\r\n");
     stream.write_all(head.as_bytes()).await.map_err(|e| e.to_string())?;
-    let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).await.map_err(|e| e.to_string())?;
-    parse_http(&String::from_utf8_lossy(&raw))
+    // Read the head, then exactly the declared body length: servers may keep the
+    // connection open (no EOF), which read_to_end would wait for.
+    let mut raw = Vec::with_capacity(2048);
+    let mut buf = [0u8; 1024];
+    let head_end = loop {
+        let n = stream.read(&mut buf).await.map_err(|e| e.to_string())?;
+        if n == 0 {
+            break raw.len();
+        }
+        raw.extend_from_slice(&buf[..n]);
+        if let Some(pos) = find_subslice(&raw, b"\r\n\r\n") {
+            break pos + 4;
+        }
+    };
+    let head_text = String::from_utf8_lossy(&raw[..head_end.min(raw.len())]).to_string();
+    let content_length = head_text.lines().find_map(|line| {
+        let (k, v) = line.split_once(':')?;
+        if k.trim().eq_ignore_ascii_case("content-length") {
+            v.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    });
+    // Body: read the declared length, or (chunked/close-delimited) until EOF with a
+    // short timeout so an idle keep-alive socket can't stall the probe.
+    let body_collection = async {
+        let mut body = raw[head_end.min(raw.len())..].to_vec();
+        match content_length {
+            Some(len) => {
+                while body.len() < len {
+                    let n = stream.read(&mut buf).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    body.extend_from_slice(&buf[..n]);
+                }
+            }
+            None => {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                    loop {
+                        let n = stream.read(&mut buf).await?;
+                        if n == 0 {
+                            break;
+                        }
+                        body.extend_from_slice(&buf[..n]);
+                    }
+                    Ok::<_, std::io::Error>(())
+                })
+                .await;
+            }
+        }
+        Ok::<Vec<u8>, std::io::Error>(body)
+    };
+    let body = body_collection.await.map_err(|e| e.to_string())?;
+    parse_http_with_body(&head_text, body)
+}
+
+fn parse_http_with_body(head: &str, body: Vec<u8>) -> Result<HttpResponse, String> {
+    let mut parsed = parse_http(head)?;
+    parsed.body = String::from_utf8_lossy(&body).to_string();
+    Ok(parsed)
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 fn parse_http(text: &str) -> Result<HttpResponse, String> {

@@ -8,7 +8,8 @@ import { TestClient } from "@cairn/conformance";
 import { afterAll, describe, expect, it } from "vitest";
 import { type RelayHandle, startRelay } from "../src/relay.js";
 
-const CONNECTIONS = 10_000;
+/** Overridable for dev runs under contention (CI runs the full 10 000). */
+const CONNECTIONS = Number(process.env.SOAK_CONNECTIONS ?? 10_000);
 
 describe("idle connection soak (doc 11 M3)", () => {
   let relay: RelayHandle;

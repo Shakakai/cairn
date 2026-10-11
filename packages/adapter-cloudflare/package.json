@@ -12,12 +12,24 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc --noEmit",
     "test": "vitest run",
+    "dev": "wrangler dev --port 8787",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:prod": "wrangler deploy --env prod",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@cairn/conformance": "workspace:^",
+    "@cairn/router-memory": "workspace:^",
+    "@cloudflare/vitest-plugin": "^1.4.0",
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@types/node": "^26.6.5",
     "typescript": "5.9.3",
-    "vitest": "3.2.4"
+    "vitest": "4.1.9",
+    "wrangler": "^4.149.0"
+  },
+  "dependencies": {
+    "@cairn/core": "workspace:^"
   }
 }

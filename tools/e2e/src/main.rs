@@ -321,15 +321,9 @@ async fn replay(cairn: &str) -> Result<(), String> {
     getrandom_nonce(&mut nonce);
     // First use succeeds.
     raw::connect_ok(cairn, [7u8; 32], nonce).await?;
-    // Reuse is rejected.
-    raw::expect_upgrade_rejected(
-        cairn,
-        raw::Auth::Fresh { seed: [7u8; 32], nonce: Some(nonce) },
-        "switchback.v1",
-        401,
-        "auth: replay",
-    )
-    .await
+    // Reuse is rejected (401 before accept on Node; 1008 close after accept on
+    // Cloudflare — doc 01 §3.1).
+    raw::expect_replayed(cairn, [7u8; 32], nonce).await
 }
 
 /// Auth with a timestamp outside the skew must be rejected 401 auth: stale (docs/08).

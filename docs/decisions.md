@@ -130,6 +130,36 @@ relay sees (frames, addressing, identity proofs) is Switchback v1 and testable v
 shared vectors. Future IP/holepunching paths (M7) plug additional `AsyncUdpSocket`s into
 the same endpoint.
 
+## ADR-015 — Cloudflare: no cross-request WebSocket sends; ready handshake; owner-open retry
+**Context:** Docs/04 designed an isolate-local fast path (Worker(A) delivers directly to
+a socket held by Worker(B)) and assumed the Hibernation API could be validated under
+Miniflare. Both assumptions failed against the real platform during M5: (a) current
+Cloudflare Workers reject sending on a WebSocket owned by a different upgrade request
+("Cannot perform I/O on behalf of a different request") — even the canonical chat
+pattern fails; (b) socket events do not buffer for late listeners, so notices sent
+between a mailbox's 101 and the Worker's listener attachment were dropped; (c) DO
+websocket fetches can transiently fail with "Network connection lost" while a mailbox
+evicts; (d) the local `@cloudflare/vitest-plugin` runtime (Miniflare 5 alpha) silently
+drops cross-instance socket sends and mangles some binary deliveries, so the push-heavy
+router semantics can't run there.
+**Decision:** (a) Every relayed frame travels the documented link path: Worker →
+destination mailbox → owner socket → owning Worker (doc 04 updated). This keeps exactly
+one billed DO message per frame; the fast-path optimization is unavailable on current
+Workers and may be revisited when the platform allows it. (b) Owner sockets use a
+`{"t":"ready"}` handshake: the mailbox buffers notices/frames per owner until `ready`,
+then flushes in order. (c) Owner-socket opens retry up to 3 times with backoff; a 409
+replay verdict is final (doc 01 §3.1: close 1008 after accept). (d) Conformance for the
+mailbox runs against `wrangler dev` (real workerd): host suite 13/13 and e2e
+probes/echo-relayed/displace/gone/replay/stale all pass; the Miniflare suite keeps the
+nonce-replay unit test and the pull-based semantics that the local runtime proves
+reliably. (e) The Mailbox uses the Hibernation API (`acceptWebSocket` + attachments +
+`getWebSockets()`), keeping registry state in attachments so it survives eviction.
+**Consequences:** Same-PoP pairs pay one DO message per frame where the old model hoped
+for zero; revisit when the platform lifts the cross-request I/O restriction (measure on
+staging). The `activeByEndpoint` map remains for metrics/future use. Binary WebSocket
+payloads may arrive as `Blob` or `ArrayBufferView` depending on the runtime: adapters
+must normalise (`toBytes`).
+
 ## Open questions (resolve during the milestones; record outcomes as new ADRs)
 
 - M4/M5: Are client WebSocket pings answered by the Workers runtime without invoking the Worker?

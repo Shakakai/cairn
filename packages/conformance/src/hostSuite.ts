@@ -16,6 +16,11 @@ export interface HostConformanceOptions {
   /** Extra config context for test titles. */
   name: string;
   start: () => Promise<StartedHost>;
+  /**
+   * Platforms that detect replay after the WebSocket is accepted (Cloudflare, doc 01
+   * §3.1) close the accepted socket with 1008 instead of rejecting the upgrade with 401.
+   */
+  replayClosesWith1008?: boolean;
 }
 
 const seed = (b: number): Uint8Array => new Uint8Array(32).fill(b);
@@ -65,15 +70,23 @@ export function hostConformance(options: HostConformanceOptions): void {
       ).rejects.toMatchObject({ status: 401, body: "auth: stale" });
     });
 
-    it("rejects replayed nonces (401 auth: replay)", async () => {
+    it("rejects replayed nonces", async () => {
       const nonce = new Uint8Array(16).fill(0x5c);
       const c1 = await TestClient.connect(host.url, { seed: seed(5), nonce });
       c1.close(1000);
       await c1.waitForClose();
-      await expect(TestClient.connect(host.url, { seed: seed(5), nonce })).rejects.toMatchObject({
-        status: 401,
-        body: "auth: replay",
-      });
+      if (options.replayClosesWith1008 === true) {
+        // doc 01 §3.1: on Cloudflare replay is detected after accept: the relay closes
+        // the socket with 1008 right after acceptance.
+        const c2 = await TestClient.connect(host.url, { seed: seed(5), nonce });
+        const close = await c2.waitForClose(10_000);
+        expect(close.code).toBe(1008);
+      } else {
+        await expect(TestClient.connect(host.url, { seed: seed(5), nonce })).rejects.toMatchObject({
+          status: 401,
+          body: "auth: replay",
+        });
+      }
     });
 
     it("relays Send→Recv and SendBatch→RecvBatch between endpoints", async () => {

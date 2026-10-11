@@ -1,0 +1,27 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "cairn",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "MAILBOX", "class_name": "Mailbox" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Mailbox"] }],
+  "limits": { "cpu_ms": 300000 },
+  "observability": { "enabled": true },
+  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "cairn" }],
+  "vars": { "RELAY_CONFIG": "{}" },
+  "env": {
+    "staging": {
+      "name": "cairn-staging",
+      "routes": [{ "pattern": "cairn-staging.example.net", "custom_domain": true }],
+      "vars": { "RELAY_CONFIG": "{\"access\":{\"mode\":\"open\"},\"region\":\"cf-staging\"}" }
+    },
+    "prod": {
+      "name": "cairn",
+      "routes": [{ "pattern": "cairn.example.net", "custom_domain": true }],
+      "vars": { "RELAY_CONFIG": "{\"access\":{\"mode\":\"token\"},\"region\":\"cf\"}" }
+    }
+  }
+}

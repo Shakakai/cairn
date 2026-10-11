@@ -57,6 +57,13 @@ return new Response(null, { status: 101, webSocket: client,
 ```
 
 `caps = { canPauseReads: false, serverPings: false, region: request.cf?.colo ?? "" }`.
+
+**Ready handshake (ADR-015).** Socket events do not buffer for late listeners: anything the
+mailbox sends between the 101 and the Worker attaching its `message` listener would be
+dropped. After attaching listeners, the Worker sends `{"t":"ready"}` on the owner socket;
+the mailbox buffers notices and frames per owner until it sees `ready`, then flushes them
+in order. Delivery after `ready` is plain in-order socket delivery. The same handshake
+applies to the conformance harness's `Router`.
 Client WebSocket pings are answered by the platform; the Worker sees no message for them
 (verify in M4 with a raw client; if the runtime surfaces pings to the Worker, answer in the
 Worker, never forward to a DO).
@@ -80,7 +87,7 @@ const links = new LinkCache(env);
 | `timer` | `setTimeout` per conn. |
 | `register` | Open the owner socket (below); step `registered` once it's open. |
 | `unregister` | On the owner socket send text `{"t":"bye","sentTo":[...]}`, then close it (1000). |
-| `route` | If `activeByEndpoint` has `dst` → step its conn with `deliver`. Else `links.send(dst, frame)`. |
+| `route` | `links.send(dst, frame)` (ADR-015: the platform rejects sending on a WebSocket owned by a different upgrade request, so the isolate-local fast path is not usable on current Workers). |
 | `metric` | Workers Analytics Engine (`env.METRICS.writeDataPoint`), sampled (doc 10). |
 
 ### Owner socket

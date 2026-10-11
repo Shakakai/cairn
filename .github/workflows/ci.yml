@@ -44,6 +44,15 @@ jobs:
       - name: e2e scenarios
         run: cargo run -p e2e -- --cairn ws://127.0.0.1:18080 --scenario all
 
+      # M5 (local half): Cloudflare adapter under Miniflare + full smoke against
+      # `wrangler dev` (real workerd). Staging deploy + doc-04 risk measurements need
+      # Cloudflare credentials (deploy/cloudflare/README.md).
+      - name: Cloudflare adapter tests (Miniflare)
+        run: pnpm --filter @cairn/adapter-cloudflare test
+
+      - name: Cloudflare e2e against wrangler dev
+        run: scripts/test-cf-host.sh smoke
+
   rust:
     name: Rust (cargo test)
     runs-on: ubuntu-latest
