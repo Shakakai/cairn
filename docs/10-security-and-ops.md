@@ -47,8 +47,8 @@ new tokens, retire the old kid after max token lifetime (default 7 days).
 | Inbound frames per connection per second | 2 000 (drop beyond) | core |
 | Inbound bytes per connection per second | off (suggested 1 MB/s for open mode) | core token bucket |
 | Outbound frames per connection per second (Workers) | 2 000 | adapter-cloudflare |
-| Upgrades per client IP per minute | 60 | Node: in-process per host; Cloudflare: a WAF rate-limiting rule on `/v1/connect` |
-| Auth failures per IP per minute | 20 → 429 for 5 min | same |
+| Upgrades per client IP per minute | 60 (`abuse.upgradesPerMinute`) | Node: in-process per host; Cloudflare: a WAF rate-limiting rule on `/v1/connect` |
+| Auth failures per IP per minute | 20 (`abuse.authFailuresPerMinute`) → 429 for `abuse.blockMs` (5 min) | same |
 
 ## Configuration
 

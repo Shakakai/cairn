@@ -12,12 +12,14 @@ import {
   type Env,
   type Notice,
   negotiateUpgrade,
+  normalizeHost,
   openConnection,
   type RelayConfig,
   routeHttp,
   step,
   type UpgradeDecision,
   validateRelayConfig,
+  verifyAccessToken,
 } from "@cairn/core";
 import { Mailbox } from "./mailbox.js";
 import type { Env as Bindings } from "./types.js";
@@ -527,6 +529,22 @@ export default {
       if (!decision.ok) {
         return new Response(decision.body, { status: decision.status, headers: decision.headers });
       }
+      // Access policy (docs/01 §3.3, 10): token mode requires a valid access token.
+      const config = relayConfig(env);
+      if (config.access.mode === "token") {
+        const keysRaw = env.ACCESS_TOKEN_PUBLIC_KEYS;
+        const keys = parseKeys(keysRaw);
+        const audience =
+          config.access.audience ?? normalizeHost(lowerCaseHeaders(request.headers).host ?? "");
+        const token = decision.token;
+        const ok =
+          token !== undefined &&
+          verifyAccessToken(token, decision.endpoint, audience, Math.floor(Date.now() / 1000), keys).ok;
+        if (!ok) {
+          metric(env, "relay_upgrade_rejected_total", 1, { reason: "access" });
+          return new Response("access denied", { status: 403 });
+        }
+      }
       return acceptWebSocket(ctx, decision, coreEnv, env);
     }
 
@@ -620,6 +638,15 @@ function lowerCaseHeaders(headers: Headers): Record<string, string> {
 
 function jsonError(status: number, body: string, headers?: Record<string, string>): Response {
   return new Response(body, { status, ...(headers !== undefined ? { headers } : {}) });
+}
+
+function parseKeys(raw: string | undefined): Record<string, string> {
+  if (raw === undefined || raw === "") return {};
+  try {
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return {};
+  }
 }
 
 function b64encode(bytes: Uint8Array): string {

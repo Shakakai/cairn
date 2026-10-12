@@ -18,7 +18,7 @@ services:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
     environment:
-      RELAY_CONFIG: '{"access":{"mode":"open"},"region":"pool-1","router":{"kind":"redis","redis":{"url":"redis://valkey:6379"}},"ports":{"relay":8080,"admin":9090}}'
+      RELAY_CONFIG: '{"access":{"mode":"open"},"region":"pool-1","router":{"kind":"redis","redis":{"url":"redis://valkey:6379"}},"ports":{"relay":8080,"admin":9090},"abuse":{"upgradesPerMinute":100000}}'
     ports:
       - "8081:8080"
       - "9091:9090"
@@ -30,7 +30,7 @@ services:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
     environment:
-      RELAY_CONFIG: '{"access":{"mode":"open"},"region":"pool-2","router":{"kind":"redis","redis":{"url":"redis://valkey:6379"}},"ports":{"relay":8080,"admin":9090}}'
+      RELAY_CONFIG: '{"access":{"mode":"open"},"region":"pool-2","router":{"kind":"redis","redis":{"url":"redis://valkey:6379"}},"ports":{"relay":8080,"admin":9090},"abuse":{"upgradesPerMinute":100000}}'
     ports:
       - "8082:8080"
       - "9092:9090"

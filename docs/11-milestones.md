@@ -125,6 +125,16 @@ Acceptance
 
 ## M8 — Hardening and production
 
+> **Status: complete except the blocked measurements (2026-10-12, ADR-019).** Access
+> tokens (core + dev CLI + both adapters, staging- and prod-verified), per-IP abuse
+> limits, `tools/load`, the Grafana dashboard, and the production deploy on Cloudflare
+> (`cairn.veracity-agent.workers.dev`, token mode) are done. Measured: staging idle run
+> (10,443 connected, 0 errors/drops) + the DO cost model (≈6 billed requests per
+> connection-hour), pool proof to 11,169 concurrent with 0 drops, stream throughput
+> ~3,200 frames/s. Blocked: the literal 100k single-source run (TCP 4-tuple limits —
+> needs a generator fleet, doc 12), container-cloud load (needs provider deploys,
+> ADR-017), exact DO analytics (token permissions), pool CPU profiling (M6 follow-up).
+
 Deliverables
 - Access tokens (`core/tokens.ts`, dev token CLI), all abuse limits of doc 10, metrics and
   dashboards, runbooks exercised once each on staging.

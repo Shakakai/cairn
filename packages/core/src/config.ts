@@ -62,6 +62,12 @@ export interface RelayConfig {
   routeCacheMs: number;
   /** Bound of the in-memory (endpoint, nonce) replay cache, per deployment host. */
   nonceCacheCapacity: number;
+  /** Per-IP abuse limits (doc 10). */
+  abuse: {
+    upgradesPerMinute: number;
+    authFailuresPerMinute: number;
+    blockMs: number;
+  };
 }
 
 export const defaultRelayConfig: RelayConfig = {
@@ -97,6 +103,11 @@ export const defaultRelayConfig: RelayConfig = {
   hostTtlMs: 15_000,
   routeCacheMs: 2_000,
   nonceCacheCapacity: 100_000,
+  abuse: {
+    upgradesPerMinute: 60,
+    authFailuresPerMinute: 20,
+    blockMs: 300_000,
+  },
 };
 
 /** Platform capabilities reported by an adapter (docs/02). */
@@ -160,6 +171,7 @@ export function validateRelayConfig(raw: unknown): RelayConfig {
         "hostTtlMs",
         "routeCacheMs",
         "nonceCacheCapacity",
+        "abuse",
       ].includes(k),
   );
   if (unknown.length > 0) {
@@ -199,6 +211,20 @@ export function validateRelayConfig(raw: unknown): RelayConfig {
   assign("hostTtlMs", num("hostTtlMs", 1_000));
   assign("routeCacheMs", num("routeCacheMs", 0));
   assign("nonceCacheCapacity", num("nonceCacheCapacity", 1));
+
+  if (input.abuse !== undefined) {
+    const abuse = section(input.abuse, "abuse");
+    for (const key of ["upgradesPerMinute", "authFailuresPerMinute", "blockMs"] as const) {
+      const value = abuse[key];
+      if (value !== undefined) {
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+          throw new Error(`RELAY_CONFIG: abuse.${key} must be a number >= 1`);
+        }
+        cfg.abuse[key] = value;
+      }
+    }
+    rejectUnknown(abuse, "abuse", ["upgradesPerMinute", "authFailuresPerMinute", "blockMs"]);
+  }
 
   if (input.access !== undefined) {
     const access = section(input.access, "access");

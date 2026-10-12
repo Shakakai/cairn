@@ -16,7 +16,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "dev": "RELAY_CONFIG=${RELAY_CONFIG:-'{\"access\":{\"mode\":\"open\"},\"region\":\"dev\"}'} tsx src/main.ts",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "mint-token": "tsx src/mint.ts"
   },
   "devDependencies": {
     "@cairn/conformance": "workspace:^",

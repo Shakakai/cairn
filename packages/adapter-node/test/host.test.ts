@@ -5,7 +5,11 @@ hostConformance({
   name: "node-memory",
   start: async () => {
     const relay = await startRelay({
-      config: { access: { mode: "open" }, region: "test" },
+      config: {
+        access: { mode: "open" },
+        abuse: { upgradesPerMinute: 1_000_000, authFailuresPerMinute: 1_000_000, blockMs: 1_000 },
+        region: "test",
+      },
       port: 0,
       adminPort: 0,
     });

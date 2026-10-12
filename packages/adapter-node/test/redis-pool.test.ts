@@ -20,6 +20,7 @@ let relayB: RelayHandle;
 
 const REDIS_CONFIG = {
   access: { mode: "open" as const },
+  abuse: { upgradesPerMinute: 1_000_000, authFailuresPerMinute: 1_000_000, blockMs: 1_000 },
   router: { kind: "redis" as const, redis: { url: "", cluster: false } },
 };
 

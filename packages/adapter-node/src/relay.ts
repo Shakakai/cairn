@@ -20,6 +20,7 @@ import {
   type HttpResponse,
   type Notice,
   negotiateUpgrade,
+  normalizeHost,
   openConnection,
   type RelayConfig,
   type Router,
@@ -32,7 +33,70 @@ import { RedisRouter } from "@cairn/router-redis";
 import { Redis } from "ioredis";
 import { WebSocket, WebSocketServer } from "ws";
 import { Metrics } from "./metrics.js";
-import { type AccessPolicy, makeAccessPolicy } from "./policy.js";
+import { type AccessPolicy, makeAccessPolicy, parseTokenPublicKeys } from "./policy.js";
+
+/** doc 10 per-IP abuse limits: 60 upgrades/min, 20 auth failures/min (429 for 5 min). */
+interface AbuseEntry {
+  upgrades: number;
+  upgradeWindowStart: number;
+  authFailures: number;
+  authWindowStart: number;
+  blockedUntil: number;
+}
+
+const abuse = new Map<string, AbuseEntry>();
+
+function abuseEntry(ip: string): AbuseEntry {
+  let entry = abuse.get(ip);
+  if (entry === undefined) {
+    entry = { upgrades: 0, upgradeWindowStart: 0, authFailures: 0, authWindowStart: 0, blockedUntil: 0 };
+    abuse.set(ip, entry);
+  }
+  return entry;
+}
+
+function isBlocked(ip: string, map: Map<string, AbuseEntry>): boolean {
+  return (map.get(ip)?.blockedUntil ?? 0) > Date.now();
+}
+
+function recordUpgrade(ip: string, map: Map<string, AbuseEntry>, limit: number, blockMs: number): boolean {
+  const now = Date.now();
+  const e = abuseEntry(ip);
+  if (now - e.upgradeWindowStart >= 60_000) {
+    e.upgradeWindowStart = now;
+    e.upgrades = 0;
+  }
+  e.upgrades += 1;
+  if (e.upgrades > limit) {
+    e.blockedUntil = now + blockMs;
+    return false;
+  }
+  return true;
+}
+
+function recordAuthFailure(ip: string, map: Map<string, AbuseEntry>, limit: number, blockMs: number): void {
+  const now = Date.now();
+  const e = abuseEntry(ip);
+  if (now - e.authWindowStart >= 60_000) {
+    e.authWindowStart = now;
+    e.authFailures = 0;
+  }
+  e.authFailures += 1;
+  if (e.authFailures > limit) {
+    e.blockedUntil = now + blockMs;
+  }
+}
+
+function ipOf(req: IncomingMessage): string {
+  // Offload mode: the platform LB appends X-Forwarded-For; trust the LAST hop only
+  // when the direct peer is a loopback/LB address (single-instance dev setups).
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string") {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first !== undefined && first !== "") return first;
+  }
+  return req.socket.remoteAddress ?? "unknown";
+}
 
 const log = (msg: string, fields: Record<string, unknown> = {}): void => {
   console.log(JSON.stringify({ ts: Date.now(), msg, ...fields }));
@@ -151,7 +215,9 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
   metrics.setGauge("relay_up", 1);
   const conns = new Map<string, ConnRuntime>();
   const connGauge = new Map<string, number>();
-  const policy: AccessPolicy = options.accessPolicy ?? makeAccessPolicy(config, log);
+  const policy: AccessPolicy =
+    options.accessPolicy ??
+    makeAccessPolicy(config, parseTokenPublicKeys(process.env.ACCESS_TOKEN_PUBLIC_KEYS), (m) => log(m));
   let draining = false;
   let keepalive: NodeJS.Timeout | undefined;
 
@@ -471,6 +537,14 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
 
   server.on("upgrade", (req, socket, head) => {
     (async () => {
+      const requestHost = normalizeHost(lowerCaseHeaders(req).host ?? "");
+      // doc 10 per-IP limits: upgrades/minute and auth failures/minute.
+      const ip = ipOf(req);
+      if (isBlocked(ip, abuse)) {
+        metrics.inc("relay_upgrade_rejected_total", 1, { reason: "abuse" });
+        writeHttpError(socket, { status: 429, body: "too many requests", headers: { "Retry-After": "300" } });
+        return;
+      }
       if (draining) {
         writeHttpError(socket, { status: 503, body: "draining", headers: { "Retry-After": "1" } });
         return;
@@ -486,7 +560,15 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
       );
       if (!decision.ok) {
         metrics.inc("relay_upgrade_rejected_total", 1, { reason: decision.body.split(":")[0] ?? "unknown" });
+        if (decision.status === 401) {
+          recordAuthFailure(ip, abuse, config.abuse.authFailuresPerMinute, config.abuse.blockMs);
+        }
         writeHttpError(socket, decision);
+        return;
+      }
+      if (!recordUpgrade(ip, abuse, config.abuse.upgradesPerMinute, config.abuse.blockMs)) {
+        metrics.inc("relay_upgrade_rejected_total", 1, { reason: "abuse" });
+        writeHttpError(socket, { status: 429, body: "too many requests", headers: { "Retry-After": "60" } });
         return;
       }
       if (!(await router.claimNonce(decision.endpoint, decision.nonce, 2 * config.authSkewMs))) {
@@ -494,7 +576,7 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
         writeHttpError(socket, { status: 401, body: "auth: replay" });
         return;
       }
-      if (!(await policy.allow(decision.endpoint, decision.token))) {
+      if (!(await policy.allow(decision.endpoint, decision.token, requestHost))) {
         metrics.inc("relay_upgrade_rejected_total", 1, { reason: "access" });
         writeHttpError(socket, { status: 403, body: "access denied" });
         return;

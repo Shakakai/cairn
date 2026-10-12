@@ -1,0 +1,16 @@
+FROM rust:1.95-slim AS build
+WORKDIR /build
+COPY Cargo.toml ./
+COPY clients/rust ./clients/rust
+COPY tools/load ./tools/load
+# Stub the remaining workspace members so cargo can parse the workspace.
+RUN mkdir -p tools/e2e/src tools/vectors/src tools/load2 && \
+    printf '[package]\nname="e2e"\nversion="0.1.0"\nedition="2021"\n[[bin]]\nname="e2e"\npath="src/main.rs"\n' > tools/e2e/Cargo.toml && \
+    echo 'fn main() {}' > tools/e2e/src/main.rs && \
+    printf '[package]\nname="vectors"\nversion="0.1.0"\nedition="2021"\n[[bin]]\nname="vectors"\npath="src/main.rs"\n' > tools/vectors/Cargo.toml && \
+    echo 'fn main() {}' > tools/vectors/src/main.rs
+RUN cargo build --release -p load
+
+FROM debian:12-slim
+COPY --from=build /build/target/release/load /usr/local/bin/load
+ENTRYPOINT ["load"]

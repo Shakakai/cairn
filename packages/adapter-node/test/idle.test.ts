@@ -22,7 +22,11 @@ describe("idle connection soak (doc 11 M3)", () => {
 
   it(`holds ${CONNECTIONS} concurrent idle connections without errors`, { timeout: 180_000 }, async () => {
     relay = await startRelay({
-      config: { access: { mode: "open" }, region: "soak" },
+      config: {
+        access: { mode: "open" },
+        abuse: { upgradesPerMinute: 1_000_000, authFailuresPerMinute: 1_000_000, blockMs: 1_000 },
+        region: "soak",
+      },
       port: 0,
       adminPort: 0,
     });

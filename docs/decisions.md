@@ -239,6 +239,47 @@ deployment (deferred with the providers). Holepunching across arbitrary NATs (th
 part of "direct") is NOT in v1 scope beyond STUN reflexive + LAN/loopback candidates;
 multi-NAT support is future work (docs/12).
 
+## ADR-019 — M8 hardening: tokens, abuse limits, load measurements, production
+**Context:** M8 (docs/11) required access tokens, the doc 10 abuse limits, load/cost
+measurements, and a production deploy.
+**Delivered.** (a) `core/tokens.ts`: doc-10 token format (base64url(JSON) + strict Ed25519
+signature), kid-keyed rotation, aud/iat/exp/sub checks; dev CLI (`pnpm --filter
+@cairn/adapter-node mint-token`); both adapters enforce `token` mode (verified on staging:
+403 without, connect with; prod runs token mode on `cairn.veracity-agent.workers.dev` —
+**the dev-1 key must be replaced by a real issuer before public launch**, ADR-009 domain
+check pending). (b) Per-IP limits (60 upgrades/min, 20 auth failures/min → 429 + 5-min
+block) are implemented in the Node adapter and now configurable
+(`abuse.upgradesPerMinute` etc., doc 10 updated); Cloudflare relies on the platform/WAF
+(documented in deploy/cloudflare). (c) `tools/load` (patterns idle/pairs/stream,
+ramp, CSV, real-pair echo latency). (d) Grafana dashboard at
+`deploy/monitoring/grafana-cairn.json`.
+**Measurements (2026-10-12).** Staging Cloudflare, 12k-client idle run (4-min ramp,
+8-min hold): 10,443 connected, 1,556 ramp rejections (~13%, keychain/edge contention at
+burst), 0 conn errors, 0 drops; self-keepalive cadence measured. Cost model: an idle
+connection costs 2 self-keepalive frames/min, each billed 1/20-request into its mailbox
+≈ **6 billed DO requests per connection-hour**; a new peer connection costs one mailbox
+creation + one frame ≈ 0.05–0.1 billed requests. Local pool (2 nodes + Valkey): 11,169
+concurrent idle connections with 0 drops; ~55 KB server-side per connection across the
+pool. Stream pattern: ~3,200 frames/s echoed between real pairs (p50 8 ms, p99 92 ms
+relay hop on loopback).
+**Blocked / follow-up (recorded, not worked around):**
+- *100k concurrent on staging / container cloud*: one source machine is capped by TCP
+  4-tuple limits (~16k ports per destination; a whole Docker VM shares one ephemeral
+  pool); a true 100k run needs a distributed generator fleet (doc 12). Server-side
+  linearity is demonstrated to 11k with zero drops.
+- *Pool CPU*: both pool nodes peg one core at ~4k idle connections; profiling the
+  Redis pub/sub per-frame path is M6-follow-up work (providers deferred, ADR-017).
+- *Analytics GraphQL* for exact DO request counts: token lacks analytics permission;
+  cost model derived from measured frame counts + billing rules.
+- *Container-platform cloud load test*: needs a provider deployment (ADR-017).
+**Security review checklist (docs/10 threat model):** auth-in-upgrade rejects before
+accept ✓ (e2e replay/stale); strict Ed25519 everywhere ✓ (vectors); identity proofs in
+QUIC certs ✓ (ADR-013); tokens separate from key ownership ✓; per-IP + per-connection
+abuse limits ✓ (tests); no payload/auth/token logging ✓ (endpoint-id short form only);
+TLS offload/terminate ✓; nonce replay ✓ (staging-verified). Open: real token issuer +
+domain/trademark check before public launch (ADR-009); WAF rules on the Cloudflare zone
+(separate permission set).
+
 ## Open questions (resolve during the milestones; record outcomes as new ADRs)
 
 - M4/M5: Are client WebSocket pings answered by the Workers runtime without invoking the Worker?

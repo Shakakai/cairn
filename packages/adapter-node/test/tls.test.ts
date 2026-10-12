@@ -32,6 +32,7 @@ describe("TLS terminate mode (doc 05)", () => {
     relay = await startRelay({
       config: {
         access: { mode: "open" },
+        abuse: { upgradesPerMinute: 1_000_000, authFailuresPerMinute: 1_000_000, blockMs: 1_000 },
         tls: { mode: "terminate", certFile, keyFile },
       },
       port: 0,
@@ -65,7 +66,14 @@ describe("TLS terminate mode (doc 05)", () => {
 
   it("terminate mode without cert files throws at startup", async () => {
     await expect(
-      startRelay({ config: { access: { mode: "open" }, tls: { mode: "terminate" } }, port: 0 }),
+      startRelay({
+        config: {
+          access: { mode: "open" },
+          abuse: { upgradesPerMinute: 1_000_000, authFailuresPerMinute: 1_000_000, blockMs: 1_000 },
+          tls: { mode: "terminate" },
+        },
+        port: 0,
+      }),
     ).rejects.toThrow(/tls.certFile/);
   });
 });

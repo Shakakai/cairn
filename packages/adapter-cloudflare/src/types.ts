@@ -11,4 +11,6 @@ export interface Env {
   RELAY_CONFIG: string;
   /** VCS commit for /healthz (injected by CI; "dev" otherwise). */
   GIT_COMMIT?: string;
+  /** JSON map kid -> base64 Ed25519 public key for access tokens (doc 10). */
+  ACCESS_TOKEN_PUBLIC_KEYS?: string;
 }

@@ -24,12 +24,15 @@
     },
     "prod": {
       "name": "cairn",
+      "workers_dev": true,
       "routes": [{ "pattern": "cairn.example.net", "custom_domain": true }],
       "durable_objects": {
         "bindings": [{ "name": "MAILBOX", "class_name": "Mailbox" }]
       },
       "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "cairn" }],
-      "vars": { "RELAY_CONFIG": "{\"access\":{\"mode\":\"token\"},\"region\":\"cf\"}" }
+      "vars": {
+        "RELAY_CONFIG": "{\"access\":{\"mode\":\"token\",\"audience\":\"cairn.veracity-agent.workers.dev\"},\"region\":\"cf\"}"
+      }
     }
   }
 }
